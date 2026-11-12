@@ -249,9 +249,9 @@ These commands represent the **target developer workflow** and cannot work until
 
 ## 11. Testnet demo checklist
 
-- [ ] Rust unit tests and contract WASM build passed
-- [ ] Sandbox integration tests passed, including payouts and state invariants
-- [ ] One NEAR Testnet contract deployed, contract ID recorded
+- [x] Rust unit tests and contract WASM build passed (63 unit tests, 239 KB WASM)
+- [x] Sandbox integration tests passed, including payouts and state invariants (`tests/integration`)
+- [x] One NEAR Testnet contract deployed, contract ID recorded: `last-armand.testnet` (see `docs/DEPLOYMENT.md`)
 - [ ] Two distinct testnet wallets used, with contract storage funded
 - [ ] Two signed eligible buys with transaction links
 - [ ] Ineligible dust buy observed and rejected for timer purposes
@@ -288,5 +288,27 @@ The contract is unaudited. Do not handle real funds without a full independent s
 - FOMO3D 2018 historical overview: https://www.theblock.co/news/ecosystems/2019-08-14-blockchain-gaming-part-iii-protocol-led-second-generation-games-36054
 - French ANJ gambling criteria: https://anj.fr/professionnels/porteur-de-projet
 - French ANJ JONUM framework: https://anj.fr/jeux-objets-numeriques-monetisables-jonum
+
+## 14. License and credits
+
+**License:** [MIT](LICENSE), © 2026 armand418 and nielslecodeur. The software is provided "as is", without warranty; this does not replace the risk and legal notice in §12.
+
+**Team:** armand418 (Developer A — contract, sandbox tests, testnet deployment) and nielslecodeur (Developer B — frontend, wallet integration, testnet demo run).
+
+**AI-generated code:** both developers used Claude Code (Anthropic, model Claude Opus 5.5) to write a large part of the code, tests and documentation, under human review. Commits produced with it carry a `Co-Authored-By: Claude` trailer. The specification, economic choices and every deploy/signature decision were made by the developers.
+
+**Pre-existing libraries (not written by us):**
+
+| Library | Used for | License |
+|---|---|---|
+| [`near-sdk`](https://github.com/near/near-sdk-rs) 5.30.1 | Contract SDK | MIT or Apache-2.0 |
+| [`near-contract-standards`](https://github.com/near/near-sdk-rs) 5.30.1 | NEP-141/145/148 fungible token implementation (`FungibleToken`) | MIT or Apache-2.0 |
+| [`uint`](https://github.com/paritytech/parity-common) 0.10.2 | 256-bit integers for AMM math | MIT or Apache-2.0 |
+| [`near-workspaces`](https://github.com/near/near-workspaces-rs) 0.24.0, `tokio`, `anyhow`, `serde_json` | Sandbox integration tests | MIT or Apache-2.0 (`tokio`: MIT) |
+| `cargo-near`, `near-cli-rs` | WASM build and testnet deployment tooling | MIT or Apache-2.0 |
+
+Frontend dependencies are listed in `apps/web/package.json`.
+
+**Prior art:** the last-buyer-wins timer mechanic is not ours; see the FOMO3D, Fomo3D and ClawFomo references in §13.
 
 **One-line design principle:** Never show an onchain game result that cannot be reconstructed from real contract state and transaction receipts.
