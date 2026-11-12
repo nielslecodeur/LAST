@@ -487,3 +487,5 @@ fn integrity_view_reports_surplus() {
     assert_eq!(i.account_balance.0, BALANCE + NEAR);
     assert_eq!(i.surplus.0, i.account_balance.0 - i.storage_cost.0 - i.total_obligations.0);
 }
+
+mod gate2;

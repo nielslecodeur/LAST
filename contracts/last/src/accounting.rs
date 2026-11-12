@@ -64,6 +64,10 @@ pub struct Ledger {
     pub credits_outstanding: u128,
     /// Settled prizes not yet paid (available + in flight).
     pub prizes_outstanding: u128,
+    /// Part of `credits_outstanding + prizes_outstanding` already sent by a transfer promise whose
+    /// callback has not run. The runtime deducts it from the balance when the promise is created,
+    /// but it stays an obligation until success is confirmed (it comes back on failure).
+    pub in_flight: u128,
 }
 
 impl Ledger {

@@ -17,7 +17,7 @@ use near_sdk::store::LookupMap;
 use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault};
 
 use accounting::{add, Ledger};
-use game::Round;
+use game::{Round, SettledRound};
 use payouts::Credit;
 
 /// 1,000,000 LAST with 18 decimals, minted once in `new`.
@@ -30,6 +30,8 @@ pub const ONE_NEAR: u128 = 10u128.pow(24);
 enum StorageKey {
     Token,
     Credits,
+    Rounds,
+    Claimable,
 }
 
 #[near(serializers = [json])]
@@ -70,6 +72,10 @@ pub struct LastContract {
     pub(crate) current_round: Option<Round>,
     pub(crate) last_settled_round_id: Option<u64>,
     pub(crate) credits: LookupMap<AccountId, Credit>,
+    /// Settled rounds by id (one small record per round).
+    pub(crate) rounds: LookupMap<u64, SettledRound>,
+    /// Winner -> settled round ids whose prize is not PAID yet.
+    pub(crate) claimable: LookupMap<AccountId, Vec<u64>>,
     pub(crate) totals: MarketTotals,
 }
 
@@ -121,7 +127,9 @@ pub struct IntegrityView {
     pub ops_reserve: U128,
     pub credits_outstanding: U128,
     pub prizes_outstanding: U128,
-    /// `account_balance - storage_cost - total_obligations`; must never be negative.
+    /// Sent by a transfer promise, callback pending (subset of credits + prizes).
+    pub in_flight: U128,
+    /// `account_balance + in_flight - storage_cost - total_obligations`; never negative.
     pub surplus: U128,
 }
 
@@ -161,6 +169,8 @@ impl LastContract {
             current_round: None,
             last_settled_round_id: None,
             credits: LookupMap::new(StorageKey::Credits),
+            rounds: LookupMap::new(StorageKey::Rounds),
+            claimable: LookupMap::new(StorageKey::Claimable),
             totals: MarketTotals::default(),
         };
         this.assert_solvent();
@@ -191,7 +201,7 @@ impl LastContract {
             last_balance: U128(self.last_balance_of(&account_id)),
             credit_available: U128(credit.available),
             credit_in_flight: U128(credit.in_flight),
-            claimable_rounds: vec![], // Gate 2
+            claimable_rounds: self.unpaid_rounds_of(&account_id).into_iter().map(U64).collect()
         }
     }
 
@@ -221,7 +231,8 @@ impl LastContract {
             ops_reserve: U128(l.ops_reserve),
             credits_outstanding: U128(l.credits_outstanding),
             prizes_outstanding: U128(l.prizes_outstanding),
-            surplus: U128(balance.saturating_sub(add(storage, total))),
+            in_flight: U128(l.in_flight),
+            surplus: U128(add(balance, l.in_flight).saturating_sub(add(storage, total))),
         }
     }
 }
@@ -231,10 +242,13 @@ impl LastContract {
         env::storage_byte_cost().as_yoctonear() * u128::from(env::storage_usage())
     }
 
-    /// Balance must cover storage staking plus every named obligation (SPEC §1.6).
+    /// Balance must cover storage staking plus every named obligation (SPEC §1.6). NEAR sent by a
+    /// pending transfer promise has already left the balance but is still owed (or comes back), so
+    /// it is counted on the balance side.
     pub(crate) fn assert_solvent(&self) {
         let need = add(self.ledger.total_obligations(), Self::storage_cost());
-        require!(env::account_balance().as_yoctonear() >= need, "ERR_INSOLVENT");
+        let have = add(env::account_balance().as_yoctonear(), self.ledger.in_flight);
+        require!(have >= need, "ERR_INSOLVENT");
     }
 }
 

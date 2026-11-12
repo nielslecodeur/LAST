@@ -18,6 +18,62 @@ pub struct Round {
     pub qualifying_buy_count: u32,
 }
 
+#[near(serializers = [borsh])]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimStatus {
+    Available,
+    InFlight,
+    Paid,
+}
+
+impl ClaimStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ClaimStatus::Available => "AVAILABLE",
+            ClaimStatus::InFlight => "IN_FLIGHT",
+            ClaimStatus::Paid => "PAID",
+        }
+    }
+}
+
+/// Archived round and the single prize claim of its winner.
+#[near(serializers = [borsh])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettledRound {
+    pub winner: AccountId,
+    pub prize: u128,
+    pub started_at_ns: u64,
+    pub ended_at_ns: u64,
+    pub qualifying_buy_count: u32,
+    pub claim_status: ClaimStatus,
+}
+
+#[near(serializers = [json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoundView {
+    pub round_id: U64,
+    pub winner: AccountId,
+    pub prize: U128,
+    pub started_at_ns: U64,
+    pub ended_at_ns: U64,
+    pub qualifying_buy_count: u32,
+    pub claim_status: String,
+}
+
+impl RoundView {
+    pub fn new(round_id: u64, r: &SettledRound) -> Self {
+        Self {
+            round_id: U64(round_id),
+            winner: r.winner.clone(),
+            prize: U128(r.prize),
+            started_at_ns: U64(r.started_at_ns),
+            ended_at_ns: U64(r.ended_at_ns),
+            qualifying_buy_count: r.qualifying_buy_count,
+            claim_status: r.claim_status.as_str().to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Idle,
@@ -96,6 +152,53 @@ impl LastContract {
 
 #[near]
 impl LastContract {
+    /// Permissionless once expired. Moves the live pot into the winner's claim, archives the round
+    /// and returns to IDLE. `next_seed_pot` is untouched. A second call finds no round and panics,
+    /// so a round can never be settled (or reserved) twice.
+    pub fn settle_round(&mut self) -> RoundView {
+        let now = env::block_timestamp();
+        match self.status_at(now) {
+            Status::Idle => env::panic_str("ERR_NO_ACTIVE_ROUND"),
+            Status::Active => env::panic_str("ERR_NOT_EXPIRED"),
+            Status::Expired => {}
+        }
+        let round = self.current_round.take().unwrap_or_else(|| env::panic_str("ERR_NO_ACTIVE_ROUND"));
+        let round_id = self.round_id;
+        let prize = self.ledger.active_pot;
+        self.ledger.active_pot = 0;
+        self.ledger.prizes_outstanding = add(self.ledger.prizes_outstanding, prize);
+
+        let settled = SettledRound {
+            winner: round.leader.clone(),
+            prize,
+            started_at_ns: round.started_at_ns,
+            ended_at_ns: round.deadline_ns,
+            qualifying_buy_count: round.qualifying_buy_count,
+            claim_status: ClaimStatus::Available,
+        };
+        self.rounds.insert(round_id, settled.clone());
+        let mut unpaid = self.claimable.get(&round.leader).cloned().unwrap_or_default();
+        unpaid.push(round_id);
+        self.claimable.insert(round.leader.clone(), unpaid);
+        self.last_settled_round_id = Some(round_id);
+        self.round_id += 1;
+
+        events::round_settled(
+            round_id,
+            &round.leader,
+            prize,
+            round.deadline_ns,
+            &env::predecessor_account_id(),
+        );
+        self.assert_solvent();
+        RoundView::new(round_id, &settled)
+    }
+
+    /// Settled round, or `None` for the current unsettled round / an unknown id.
+    pub fn get_round(&self, round_id: U64) -> Option<RoundView> {
+        self.rounds.get(&round_id.0).map(|r| RoundView::new(round_id.0, r))
+    }
+
     pub fn get_game_state(&self) -> GameStateView {
         let now = env::block_timestamp();
         let r = self.current_round.as_ref();
