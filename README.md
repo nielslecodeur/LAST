@@ -307,7 +307,19 @@ The contract is unaudited. Do not handle real funds without a full independent s
 | [`near-workspaces`](https://github.com/near/near-workspaces-rs) 0.24.0, `tokio`, `anyhow`, `serde_json` | Sandbox integration tests | MIT or Apache-2.0 (`tokio`: MIT) |
 | `cargo-near`, `near-cli-rs` | WASM build and testnet deployment tooling | MIT or Apache-2.0 |
 
-Frontend dependencies are listed in `apps/web/package.json`.
+Frontend (`apps/web`, exact versions in `apps/web/package.json` / `pnpm-lock.yaml`):
+
+| Library | Used for | License |
+|---|---|---|
+| [`react`, `react-dom`](https://github.com/facebook/react) 19.3.1 | UI | MIT |
+| [`@hot-labs/near-connect`](https://github.com/hot-dao/near-selector) 0.12.0 | NEAR wallet connection (testnet) | MIT |
+| [`vite`](https://github.com/vitejs/vite) 8.2.6, `@vitejs/plugin-react` 6.2.1 | Dev server and build | MIT |
+| [`tailwindcss`, `@tailwindcss/vite`](https://github.com/tailwindlabs/tailwindcss) 4.3.5 | Styling | MIT |
+| [`typescript`](https://github.com/microsoft/TypeScript) 6.0.3 | Type checking | Apache-2.0 |
+| [`vitest`](https://github.com/vitest-dev/vitest) 5.0.5, `jsdom` 30.1.3, `@testing-library/react` 16.3.3 | Tests | MIT |
+| Space Grotesk, JetBrains Mono (Google Fonts) | Typography | SIL Open Font License 1.1 |
+
+Public NEAR Testnet RPC used by the web app (read-only views): FastNEAR, then dRPC as fallback.
 
 **Prior art:** the last-buyer-wins timer mechanic is not ours; see the FOMO3D, Fomo3D and ClawFomo references in §13.
 
