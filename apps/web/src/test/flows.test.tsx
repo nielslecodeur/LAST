@@ -74,6 +74,34 @@ describe("buy flows", () => {
   });
 });
 
+describe("stale registration (Gate 4 finding)", () => {
+  it("re-reads registration before signing: no storage_deposit for an already registered account", async () => {
+    const sim = new SimulatedChain({ latencyMs: 0 });
+    await sim.connect();
+    sim.balances.set(SIM_USER, 0n); // registered on-chain
+    let stale = true; // polled data says "not registered" (e.g. RPC was rate-limited)
+    const reader: LastReader = Object.assign(Object.create(sim), {
+      getAccountState: async (id: string) => ({ ...(await sim.getAccountState(id)), registered: stale ? false : true }),
+    });
+    const sent: string[][] = [];
+    const writer: LastWriter = Object.assign(Object.create(sim), {
+      send: (tx: Parameters<LastWriter["send"]>[0]) => {
+        sent.push(tx.actions.map((a) => a.params.methodName));
+        return sim.send(tx);
+      },
+    });
+    mount(reader, writer);
+    await ready();
+    fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.05" } });
+    await waitFor(() => expect(screen.getByText(/Storage registration \(once\)/)).toBeTruthy()); // stale UI
+    await waitFor(() => expect(button(/Buy LAST & steal the crown/).disabled).toBe(false));
+    stale = false; // the chain truth, read at submit time
+    fireEvent.click(button(/Buy LAST & steal the crown/));
+    await waitFor(() => expect(sent.length).toBe(1));
+    expect(sent[0]).toEqual(["buy"]);
+  });
+});
+
 describe("expiry → settle → claim → double claim rejected (Gate 2 simulated)", () => {
   it("runs the whole end of round, confirming each step from contract state", async () => {
     window.history.replaceState({}, "", "/?demo=1");

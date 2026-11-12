@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const CONTRACT = process.env.LAST_CONTRACT ?? "last-armand.testnet";
-const RPC = process.env.NEAR_RPC ?? "https://rpc.testnet.near.org";
+const RPC = process.env.NEAR_RPC ?? "https://test.rpc.fastnear.com"; // rpc.testnet.near.org is deprecated (-429)
 const EXPLORER = "https://testnet.nearblocks.io";
 const TOTAL_SUPPLY = 10n ** 24n;
 
@@ -235,6 +235,33 @@ try {
     printSnapshot(s, inv);
     if (out) writeFileSync(out, JSON.stringify(s, null, 2));
     process.exitCode = inv.every((c) => c.ok) ? 0 : 1;
+  } else if (cmd === "watch") {
+    // watch [--dir d] [--every ms] account... : saves a snapshot each time the state changes
+    let dir = ".gate4", every = 3000;
+    const accounts = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "--dir") dir = rest[++i];
+      else if (rest[i] === "--every") every = Number(rest[++i]);
+      else accounts.push(rest[i]);
+    }
+    let prev = null, n = 0;
+    for (;;) {
+      try {
+        const s = await snapshot(accounts);
+        const fp = JSON.stringify([s.game.status, s.game.leader, s.game.deadline_ns, s.game.round_id, s.game.last_settled_round_id, s.market.buy_count, s.market.sell_count, s.integrity.in_flight, s.integrity.credits_outstanding, s.integrity.prizes_outstanding, Object.values(s.accounts).map((a) => [a.registered, a.last_balance, a.credit_available, a.credit_in_flight, a.claimable_rounds]), Object.values(s.rounds).map((r) => r?.claim_status)]);
+        if (fp !== prev) {
+          const file = `${dir}/w${String(n++).padStart(2, "0")}-${s.game.status}-b${s.market.buy_count}-s${s.market.sell_count}.json`;
+          writeFileSync(file, JSON.stringify(s, null, 2));
+          const inv = invariants(s);
+          const bad = inv.filter((c) => !c.ok).map((c) => c.name.split(" ")[0]);
+          console.log(`${s.at} block ${s.block_height} ${s.game.status} r${s.game.round_id} leader=${s.game.leader ?? "-"} buys=${s.market.buy_count} sells=${s.market.sell_count} settled=${s.game.last_settled_round_id ?? "-"} → ${file} invariants ${bad.length ? "FAIL " + bad.join(",") : "12/12 PASS"}`);
+          prev = fp;
+        }
+      } catch (e) {
+        console.log(`${new Date().toISOString()} rpc error: ${e.message}`);
+      }
+      await new Promise((r) => setTimeout(r, every));
+    }
   } else if (cmd === "tx" && rest.length === 2) {
     process.exitCode = (await inspectTx(rest[0], rest[1])) ? 0 : 1;
   } else if (cmd === "diff" && rest.length === 2) {

@@ -54,4 +54,18 @@ scripts/testnet_views.sh <account>.testnet
 
 ## Demo transactions
 
-To be filled with real transaction links as they happen (README §11): two eligible buys from distinct wallets, dust buy, sell, withdraw, settle, claim, rejected second claim, reconciliation.
+Gate 4 run, 2026-11-12, signer `nifelst.testnet` (one account; distinct-wallet crown change still to record). Full analysis in [`GATE4_REPORT.md`](GATE4_REPORT.md).
+
+| Step | Transaction | Result |
+|---|---|---|
+| First buy (`storage_deposit` + `buy` 0.05 NEAR), round #1 starts | [`9bw4YNor…`](https://testnet.nearblocks.io/txns/9bw4YNorTnoeby9uQexysaugxVdw6nHa4CTinxS7WJQb) | eligible, leader set |
+| Eligible buy 0.10 NEAR, timer reset | [`8e5zh8vZ…`](https://testnet.nearblocks.io/txns/8e5zh8vZXeUyv8MfGpZihJHYeupxHV15yjrSxMg6uf4M) | deadline moved |
+| Dust buy 0.01 NEAR | [`4hfVcj8t…`](https://testnet.nearblocks.io/txns/4hfVcj8tfYHqKx2eNjqJydpZpNA91V4pv3i5uEMmGLEE) | not eligible, deadline unchanged |
+| Sell 24,000 LAST | [`78KfJ2LT…`](https://testnet.nearblocks.io/txns/78KfJ2LTEhFYxbzDstpmJhWywq4jnr7aoPvXJ2QmME7h) | 0.076052 NEAR credit |
+| `settle_round` | [`GD7hwLJg…`](https://testnet.nearblocks.io/txns/GD7hwLJgajWnhraTWcvhYb6ufwXZ2dzk2NExegprSL2R) | round #1 → prize 0.005566 NEAR |
+| `claim_reward(1)` | [`2woWEqDT…`](https://testnet.nearblocks.io/txns/2woWEqDTSXQP4172whtkX7uoH1xg4pEZD9PpEYFDBKHK) | IN_FLIGHT → PAID |
+| `claim_reward(1)` again | [`4ebNxXCP…`](https://testnet.nearblocks.io/txns/4ebNxXCPkoEzNGAUbxTt7oD2HtDq7Xzj8hrqrH8HT5nz) | rejected `ERR_ALREADY_PAID` |
+| `withdraw_near_credit` | [`AFH6hLnf…`](https://testnet.nearblocks.io/txns/AFH6hLnfRyqaisSo5YghtBKu7X2CVA9FPnG7VdyzoDH8) | IN_FLIGHT → PAID |
+| Buy 0.05 NEAR, round #2 starts from the seed | [`G6vKPsus…`](https://testnet.nearblocks.io/txns/G6vKPsusZQPX3Ynq6t2PyuoStTkExEqNyEfuv8gjFav3) | seed 0.000795 NEAR |
+
+Reconciliation after the run (`node scripts/gate4.mjs snapshot`): 12/12 invariants PASS; balance 10.127664 NEAR ≥ storage 2.4004 + obligations 3.128381; `in_flight` 0.

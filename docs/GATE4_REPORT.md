@@ -53,24 +53,41 @@ Also record for each tx with `gate4.mjs tx`:
 - that the callbacks ran;
 - the `AVAILABLE → IN_FLIGHT → PAID` events (`prize_claim`, `credit_withdraw`).
 
-## 4. Results
+## 4. Results — run of 2026-11-12, 15:19–15:24 UTC
 
-_To fill from real transactions. Nothing below has been run yet._
+**Important:** every test transaction was signed by **one account, `nifelst.testnet`**. Both browser windows were connected to the same wallet account. The prepared accounts `lowarena9362.testnet` and `testb1.testnet` were not used: they are unregistered and still hold 5 NEAR each. The whole cycle works on-chain. A crown change between **two distinct wallets** still has to be shown on testnet (it is covered by Builder A's sandbox test).
 
-| # | Status | Transaction(s) | Gas burnt / attached | Notes |
+Checked with `scripts/gate4.mjs tx` (receipts, gas, callbacks, events) and `snapshot` (state + invariants).
+
+| # | Status | Transaction | Gas burnt / attached | Verified on-chain |
 |---|---|---|---|---|
-| S1 | PENDING | | | |
-| S2 | PENDING | | | |
-| S3 | PENDING | | | |
-| S4 | PENDING | | | |
-| S5 | PENDING | | | |
-| S6 | PENDING | | | |
-| S7 | PENDING | | | |
-| S8 | PENDING | | | |
-| S9 | PENDING | | | |
-| S10 | PENDING | | | |
+| S1 | **PASS** | [`9bw4YNor…`](https://testnet.nearblocks.io/txns/9bw4YNorTnoeby9uQexysaugxVdw6nHa4CTinxS7WJQb) `storage_deposit`+`buy` 0.05 | 4.58 / 60 Tgas | `round_started` #1 (seed 0), `eligible:true`, leader `nifelst`, 15,748.03 LAST, fee 0.002 |
+| S2 | **PARTIAL** | [`8e5zh8vZ…`](https://testnet.nearblocks.io/txns/8e5zh8vZXeUyv8MfGpZihJHYeupxHV15yjrSxMg6uf4M) `buy` 0.10 | 2.82 / 30 Tgas | Eligible, `deadline_ns` reset (…912.84 s → …947.36 s), `qualifying_buy_count` 2. **Same account**: a crown *change* between players is not shown on testnet yet |
+| S3 | **PASS** | [`4hfVcj8t…`](https://testnet.nearblocks.io/txns/4hfVcj8tfYHqKx2eNjqJydpZpNA91V4pv3i5uEMmGLEE) `buy` 0.01 | 5.13 / 60 Tgas | `eligible:false`, `deadline_ns` **unchanged** (…947.36 s), 2,904.71 LAST received. Also showed frontend bug F2 (needless `storage_deposit`, refunded by the contract) |
+| S4 | **PASS** | [`78KfJ2LT…`](https://testnet.nearblocks.io/txns/78KfJ2LTEhFYxbzDstpmJhWywq4jnr7aoPvXJ2QmME7h) `sell` 24,000 LAST | 3.06 / 30 Tgas | gross 0.077604, fee 0.001552 (2%), payout 0.076052 → `credit_available`. No NEAR sent by `sell` |
+| S5 | **PASS** | [`GD7hwLJg…`](https://testnet.nearblocks.io/txns/GD7hwLJgajWnhraTWcvhYb6ufwXZ2dzk2NExegprSL2R) `settle_round` | 2.48 / 30 Tgas | After the deadline. `round_settled` #1, winner `nifelst`, prize **0.005566451737914502596883** = exactly 70% of the 4 round fees (0.0014 + 0.0028 + 0.00028 + 0.001086451737914502596883) |
+| S6 | **PASS** | [`2woWEqDT…`](https://testnet.nearblocks.io/txns/2woWEqDTSXQP4172whtkX7uoH1xg4pEZD9PpEYFDBKHK) `claim_reward(1)` | 5.57 / 50 Tgas | `prize_claim` IN_FLIGHT → transfer → callback `on_prize_payment_complete` `success:true` → `prize_claim` PAID. `get_round(1).claim_status = PAID` |
+| S7 | **PASS** | [`4ebNxXCP…`](https://testnet.nearblocks.io/txns/4ebNxXCPkoEzNGAUbxTt7oD2HtDq7Xzj8hrqrH8HT5nz) `claim_reward(1)` again | 1.89 / 50 Tgas | FAILURE **`ERR_ALREADY_PAID`**, no transfer |
+| S8 | **PASS** | [`AFH6hLnf…`](https://testnet.nearblocks.io/txns/AFH6hLnfRyqaisSo5YghtBKu7X2CVA9FPnG7VdyzoDH8) `withdraw_near_credit` | 5.33 / 50 Tgas | `credit_withdraw` IN_FLIGHT 0.076052 → callback `on_withdraw_complete` `success:true` → PAID. Credit 0, in flight 0 |
+| S9 | **PASS** | [`G6vKPsus…`](https://testnet.nearblocks.io/txns/G6vKPsusZQPX3Ynq6t2PyuoStTkExEqNyEfuv8gjFav3) `buy` 0.05 | 5.24 / 60 Tgas | `round_started` #2 with seed **0.000795207391130643228126** = exactly the 10% shares of round 1's fees. Leader `nifelst`, round 2 ACTIVE |
+| S10 | **PASS** | snapshot @ block 277381024+ | — | **12/12 invariants**. Balance 10.127664 ≥ storage 2.4004 + obligations 3.128381. LAST: inventory 960,308.43 + `nifelst` 39,691.56 = 1,000,000 (no LAST created). `in_flight` = credits = prizes = 0 |
 
-**Buy → Settle → Claim cycle functional on testnet:** not yet confirmed (needs S1, S2, S5, S6).
+Not covered on testnet (the UI blocks it, and the sandbox test covers it): a buy after expiry rejected with `ERR_ROUND_EXPIRED`.
+
+**Buy → Settle → Claim cycle functional on testnet: YES** (S1, S5, S6, S7, S9). All payouts went `AVAILABLE/credit → IN_FLIGHT → PAID` through the private callbacks. **Gas** is 2–6 Tgas per transaction, far below the 30 / 50 Tgas attached (unused gas is refunded), so the proposed values are confirmed as safe.
+
+### Bugs found by the run
+
+| Id | Where | Severity | Status |
+|---|---|---|---|
+| F1 | Web app, default RPC | **High** | **Fixed** (`apps/web`): `rpc.testnet.near.org` is deprecated and answered `-429 THIS ENDPOINT IS DEPRECATED` (141 times in 7 min to our read-only watcher). The error came in an HTTP 200 body, so the app did not fall back and its data went stale. Now FastNEAR is first and `-429` triggers the fallback (tests added). Live suite: 21 s → 2.5 s |
+| F2 | Web app, buy | Medium (no funds lost) | **Fixed**: with stale data the app thought the account was unregistered and prepended `storage_deposit` to every buy. The contract refunded it (`The account is already registered, refunding the deposit`), costing only gas. Registration is now re-read right before signing (test added) |
+| — | Contract | — | No contract bug found |
+
+### Still to do for a full Gate 4 PASS
+
+1. Replay S1–S2 with **two distinct accounts** (e.g. `lowarena9362.testnet` then `testb1.testnet`), so that the crown moves from A to B on testnet. Connect each browser window to a different account in the wallet (check the account name in the app's top bar).
+2. Optional: try a buy after expiry with the CLI to record an on-chain `ERR_ROUND_EXPIRED`.
 
 ## 5. Known risks (going in)
 

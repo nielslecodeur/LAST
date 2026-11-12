@@ -21,7 +21,11 @@ export interface AppConfig {
   configError: string | null;
 }
 
-export const DEFAULT_RPC_URLS = ["https://rpc.testnet.near.org", "https://test.rpc.fastnear.com"];
+/**
+ * FastNEAR first: rpc.testnet.near.org is deprecated and answers `-429 THIS ENDPOINT IS DEPRECATED`
+ * under normal polling (seen during the Gate 4 run, 2026-11-12). Kept only as a last fallback.
+ */
+export const DEFAULT_RPC_URLS = ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"];
 export const DEFAULT_EXPLORER_URL = "https://testnet.nearblocks.io";
 
 /** NEAR account id rules (2–64 chars, lowercase, `-`/`_` separators, `.`-separated parts). */

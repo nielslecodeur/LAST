@@ -140,13 +140,23 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
   const gas = check.storageDeposit !== null ? GAS.storageDeposit + GAS.buy : GAS.buy;
 
   const submit = async () => {
-    if (!reader || !quote || minOut === null || gross === null || blocker) return;
+    if (!reader || !quote || minOut === null || gross === null || blocker || !accountId) return;
+    // Polled data can be stale (RPC hiccup): re-read registration right before signing, so an
+    // already registered account never sends a needless storage_deposit (Gate 4 finding).
+    let storageDeposit = check.storageDeposit;
+    if (storageDeposit !== null) {
+      try {
+        if ((await reader.getAccountState(accountId)).registered) storageDeposit = null;
+      } catch {
+        /* keep it: a redundant registration is refunded by the contract, a missing one fails the buy */
+      }
+    }
     const ok = await run(
       buildBuyTx({
         contractId: reader.contractId,
         grossYocto: gross,
         minTokensOut: minOut,
-        storageDeposit: check.storageDeposit,
+        storageDeposit,
         label: `${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
       }),
     );

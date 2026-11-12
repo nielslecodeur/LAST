@@ -252,13 +252,13 @@ These commands represent the **target developer workflow** and cannot work until
 - [x] Rust unit tests and contract WASM build passed (63 unit tests, 239 KB WASM)
 - [x] Sandbox integration tests passed, including payouts and state invariants (`tests/integration`)
 - [x] One NEAR Testnet contract deployed, contract ID recorded: `last-armand.testnet` (see `docs/DEPLOYMENT.md`)
-- [ ] Two distinct testnet wallets used, with contract storage funded
-- [ ] Two signed eligible buys with transaction links
-- [ ] Ineligible dust buy observed and rejected for timer purposes
-- [ ] A sale observed without changing the leader
-- [ ] `settle_round` after expiration with an explorer link
-- [ ] Actual jackpot claim and rejected second claim, both documented
-- [ ] Real NEAR balance and reserve reconciliation documented
+- [ ] Two distinct testnet wallets used, with contract storage funded — **still to do**: the 2026-11-12 run used one account for both roles
+- [x] Two signed eligible buys with transaction links (`docs/DEPLOYMENT.md`; same signer, see next item)
+- [x] Ineligible dust buy observed and rejected for timer purposes
+- [x] A sale observed without changing the leader
+- [x] `settle_round` after expiration with an explorer link
+- [x] Actual jackpot claim and rejected second claim, both documented (`docs/GATE4_REPORT.md`)
+- [x] Real NEAR balance and reserve reconciliation documented (12 invariants, `scripts/gate4.mjs`)
 - [ ] README updated with commands, outputs, architecture and deployed addresses
 - [ ] GitHub public, LICENSE present, AI-generated/pre-existing code credited
 - [ ] Demo video and public X post as required by NEAR Hackathon 2026

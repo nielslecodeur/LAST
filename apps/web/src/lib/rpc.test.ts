@@ -63,6 +63,23 @@ describe("RPC client", () => {
     expect(fetch.mock.calls[1]![0]).toBe("https://up.example");
   });
 
+  it("a -429 'endpoint deprecated' answer (HTTP 200) falls back to the next endpoint (Gate 4 finding)", async () => {
+    const fetch = vi
+      .fn<(u: string, i: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", error: { code: -429, message: "WARNING! THIS ENDPOINT IS DEPRECATED!" } })),
+      )
+      .mockResolvedValueOnce(viewResult(7));
+    const rpc = createRpcClient(["https://rpc.testnet.near.org", "https://test.rpc.fastnear.com"], { fetch });
+    await expect(viewFunction(rpc, "c.testnet", "x")).resolves.toBe(7);
+    expect(fetch.mock.calls[1]![0]).toBe("https://test.rpc.fastnear.com");
+  });
+
+  it("default endpoints put FastNEAR first (rpc.testnet.near.org is deprecated)", async () => {
+    const { DEFAULT_RPC_URLS } = await import("../config");
+    expect(DEFAULT_RPC_URLS[0]).toBe("https://test.rpc.fastnear.com");
+  });
+
   it("throws a network RpcError when every endpoint fails (no silent fallback)", async () => {
     const fetch = vi.fn(async () => new Response("bad gateway", { status: 502 }));
     const rpc = createRpcClient(["https://a.example", "https://b.example"], { fetch });

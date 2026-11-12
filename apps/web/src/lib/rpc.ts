@@ -68,6 +68,11 @@ export function createRpcClient(urls: string[], opts: { fetch?: FetchLike; timeo
           lastErr = e as RpcError;
           continue; // transport failure → next endpoint
         }
+        if (isRateLimited(json)) {
+          // Rate limit / deprecated endpoint: a transport problem, not an answer → next endpoint.
+          lastErr = new RpcError("network", `Rate-limited by ${new URL(urls[idx]!).host}`);
+          continue;
+        }
         preferred = idx;
         return unwrap<T>(json);
       }
@@ -78,6 +83,13 @@ export function createRpcClient(urls: string[], opts: { fetch?: FetchLike; timeo
     call,
     query: <T>(params: Record<string, unknown>) => call<T>("query", params),
   };
+}
+
+/** JSON-RPC `-429` (or a 429 cause) in an HTTP 200 body. */
+function isRateLimited(json: unknown): boolean {
+  const e = (json as { error?: { code?: unknown; name?: unknown; cause?: { name?: unknown } } }).error;
+  if (!e) return false;
+  return e.code === -429 || e.code === 429 || e.name === "TOO_MANY_REQUESTS" || e.cause?.name === "TOO_MANY_REQUESTS";
 }
 
 function unwrap<T>(json: unknown): T {
