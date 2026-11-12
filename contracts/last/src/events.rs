@@ -56,6 +56,44 @@ pub fn sell(account_id: &AccountId, tokens_in: u128, gross_near_out: u128, fee: 
     );
 }
 
+pub fn round_settled(round_id: u64, winner: &AccountId, prize: u128, ended_at_ns: u64, settled_by: &AccountId) {
+    emit(
+        "round_settled",
+        json!({
+            "round_id": U64(round_id),
+            "winner": winner,
+            "prize": U128(prize),
+            "ended_at_ns": U64(ended_at_ns),
+            "settled_by": settled_by,
+        }),
+    );
+}
+
+/// `status`: "IN_FLIGHT" | "PAID" | "FAILED".
+pub fn prize_claim(round_id: u64, winner: &AccountId, amount: u128, status: &str) {
+    emit(
+        "prize_claim",
+        json!({
+            "round_id": U64(round_id),
+            "winner": winner,
+            "amount": U128(amount),
+            "status": status,
+        }),
+    );
+}
+
+/// `status`: "IN_FLIGHT" | "PAID" | "FAILED".
+pub fn credit_withdraw(account_id: &AccountId, amount: u128, status: &str) {
+    emit(
+        "credit_withdraw",
+        json!({
+            "account_id": account_id,
+            "amount": U128(amount),
+            "status": status,
+        }),
+    );
+}
+
 pub fn round_started(round_id: u64, seed: u128, started_at_ns: u64) {
     emit(
         "round_started",
