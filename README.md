@@ -249,9 +249,9 @@ These commands represent the **target developer workflow** and cannot work until
 
 ## 11. Testnet demo checklist
 
-- [ ] Rust unit tests and contract WASM build passed
-- [ ] Sandbox integration tests passed, including payouts and state invariants
-- [ ] One NEAR Testnet contract deployed, contract ID recorded
+- [x] Rust unit tests and contract WASM build passed (63 unit tests, 239 KB WASM)
+- [x] Sandbox integration tests passed, including payouts and state invariants (`tests/integration`)
+- [x] One NEAR Testnet contract deployed, contract ID recorded: `last-armand.testnet` (see `docs/DEPLOYMENT.md`)
 - [ ] Two distinct testnet wallets used, with contract storage funded
 - [ ] Two signed eligible buys with transaction links
 - [ ] Ineligible dust buy observed and rejected for timer purposes
