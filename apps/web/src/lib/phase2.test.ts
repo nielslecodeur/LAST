@@ -271,3 +271,38 @@ describe("wallet network guard, demo flag, interrupted transactions", () => {
     expect(takeInterrupted(3_600_001)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------- API v0.3 (Gate 2 merge)
+
+import { isSolvent, parseIntegrity } from "./types";
+
+describe("CONTRACT_API v0.3 integrity (in_flight)", () => {
+  const raw = {
+    account_balance: "100",
+    storage_cost: "10",
+    total_obligations: "95",
+    market_near_reserve: "50",
+    active_pot: "0",
+    next_seed_pot: "0",
+    treasury_reserve: "0",
+    ops_reserve: "0",
+    credits_outstanding: "20",
+    prizes_outstanding: "25",
+    in_flight: "5",
+    surplus: "0",
+  };
+
+  it("parses in_flight and applies balance + in_flight >= storage + obligations", () => {
+    const i = parseIntegrity(raw);
+    expect(i.inFlight).toBe(5n);
+    // 100 + 5 >= 10 + 95 → covered, although balance alone (100) < 105
+    expect(isSolvent(i)).toBe(true);
+    expect(isSolvent({ ...i, inFlight: 0n })).toBe(false);
+  });
+
+  it("a v0.2-shaped integrity (no in_flight) is rejected, not read as 0", () => {
+    const { in_flight: _drop, ...v02 } = raw;
+    void _drop;
+    expect(() => parseIntegrity(v02)).toThrow(/in_flight/);
+  });
+});

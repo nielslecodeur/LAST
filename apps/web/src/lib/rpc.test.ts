@@ -2,6 +2,7 @@
 // deployment probing and Gate 2 detection from WASM exports.
 import { describe, expect, it, vi } from "vitest";
 import { LiveLastReader, capabilitiesFromExports } from "./reader";
+import type { Capabilities } from "./types";
 import { RpcError, createRpcClient, toBase64, viewFunction } from "./rpc";
 import { wasmFunctionExports } from "./wasm";
 
@@ -121,7 +122,7 @@ describe("LiveLastReader", () => {
       if (body.method === "gas_price") return ok({ gas_price: "100000000" });
       return handler(body.params);
     });
-    return new LiveLastReader(createRpcClient(["https://a.example"], { fetch }), "last.testnet");
+    return new LiveLastReader(createRpcClient(["https://a.example"], { fetch }), "last.testnet", { get: () => null, set: () => undefined });
   }
 
   it("probes: unknown account / no code / deployed", async () => {
@@ -132,6 +133,36 @@ describe("LiveLastReader", () => {
     const dep = reader(() => ok({ code_base64: toBase64(wasmWithExports(["buy", "get_round"])) }));
     const st = await dep.probeDeployment();
     expect(st.state).toBe("deployed");
+  });
+
+  it("downloads the WASM once per code hash, then reuses the cached capabilities", async () => {
+    const store = new Map<string, Capabilities>();
+    const cache = {
+      get: (id: string, h: string) => store.get(`${id}:${h}`) ?? null,
+      set: (id: string, h: string, c: Capabilities) => void store.set(`${id}:${h}`, c),
+    };
+    const calls: string[] = [];
+    let hash = "HASH_A";
+    const fetch = vi.fn(async (_u: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.method === "status") return ok({ chain_id: "testnet" });
+      calls.push(body.params.request_type);
+      if (body.params.request_type === "view_account") return ok({ amount: "1", storage_usage: 1, code_hash: hash });
+      return ok({ code_base64: toBase64(wasmWithExports(["settle_round", "claim_reward", "withdraw_near_credit", "get_round"])) });
+    });
+    const rpc = createRpcClient(["https://a.example"], { fetch });
+    await new LiveLastReader(rpc, "last.testnet", cache).probeDeployment();
+    await new LiveLastReader(rpc, "last.testnet", cache).probeDeployment();
+    expect(calls).toEqual(["view_account", "view_code", "view_account"]); // second load: no download
+    hash = "HASH_B"; // redeploy → new hash → re-download
+    const st = await new LiveLastReader(rpc, "last.testnet", cache).probeDeployment();
+    expect(calls.slice(3)).toEqual(["view_account", "view_code"]);
+    expect(st.state === "deployed" && st.capabilities.claimReward).toBe(true);
+  });
+
+  it("empty code hash → no contract deployed", async () => {
+    const r = reader(() => ok({ amount: "1", storage_usage: 1, code_hash: "11111111111111111111111111111111" }));
+    await expect(r.probeDeployment()).resolves.toEqual({ state: "no_code" });
   });
 
   it("refuses a non-testnet RPC endpoint before reading anything", async () => {
@@ -174,7 +205,7 @@ describe("LiveLastReader", () => {
       return ok({ code_base64: toBase64(wasmWithExports(["buy"])) });
     });
     await expect(r.getRound(1n)).rejects.toThrow(/pending Gate 2/);
-    expect(calls).toEqual(["view_code"]);
+    expect(calls).toEqual(["view_account", "view_code"]); // probe only — never call_function get_round
   });
 
   it("unreadable code → capabilities stay off", async () => {

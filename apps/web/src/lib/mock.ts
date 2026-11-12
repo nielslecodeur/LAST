@@ -155,6 +155,7 @@ export class SimulatedChain implements LastReader, LastWriter {
       opsReserve: this.ops,
       creditsOutstanding: credits,
       prizesOutstanding: prizes,
+      inFlight: 0n, // simulated payouts resolve instantly
       surplus: 0n,
     };
   }
@@ -357,7 +358,7 @@ export class SimulatedChain implements LastReader, LastWriter {
       startedAtNs: this.round.startedAtNs,
       endedAtNs: this.round.deadlineNs,
       qualifyingBuyCount: this.round.count,
-      claimStatus: (this.activePot > 0n ? "AVAILABLE" : "PAID") as ClaimStatus,
+      claimStatus: "AVAILABLE" as ClaimStatus, // as in game.rs: always AVAILABLE; claim of 0 → ERR_EMPTY_PRIZE
     };
     void who;
     this.settled.set(r.roundId.toString(), r);

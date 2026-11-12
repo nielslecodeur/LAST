@@ -1,11 +1,12 @@
 import { useLast } from "../hooks/useLast";
 import { formatCompact, formatLast, formatNear, spotPriceYoctoPerLast } from "../lib/amounts";
+import { isSolvent } from "../lib/types";
 import { Badge, Card, Dash, Stat } from "./ui";
 
 export function MarketPanel() {
   const { market, game, integrity } = useLast();
   const price = market ? spotPriceYoctoPerLast(market.nearReserve, market.lastInventory) : null;
-  const solvent = integrity ? integrity.accountBalance >= integrity.storageCost + integrity.totalObligations : null;
+  const solvent = integrity ? isSolvent(integrity) : null;
 
   return (
     <Card title="Market">
@@ -28,8 +29,9 @@ export function MarketPanel() {
         </div>
         {integrity ? (
           <p className="mt-2 font-mono text-xs leading-relaxed text-text/80">
-            balance {formatNear(integrity.accountBalance, 4)} ≥ storage {formatNear(integrity.storageCost, 4)} + obligations{" "}
-            {formatNear(integrity.totalObligations, 4)} · surplus {formatNear(integrity.surplus, 4)} NEAR
+            balance {formatNear(integrity.accountBalance, 4)}
+            {integrity.inFlight > 0n && <> + in flight {formatNear(integrity.inFlight, 4)}</>} ≥ storage {formatNear(integrity.storageCost, 4)} +
+            obligations {formatNear(integrity.totalObligations, 4)} · surplus {formatNear(integrity.surplus, 4)} NEAR
           </p>
         ) : (
           <p className="mt-2 text-xs text-mute">From <code className="font-mono">get_integrity()</code> once deployed.</p>

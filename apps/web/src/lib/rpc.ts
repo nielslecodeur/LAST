@@ -178,6 +178,19 @@ export async function viewAccountBalance(rpc: RpcClient, accountId: string): Pro
   return spendableBalance(BigInt(res.amount), usage);
 }
 
+/** Code hash of an account with no contract deployed. */
+export const EMPTY_CODE_HASH = "11111111111111111111111111111111";
+
+/** `code_hash` of an account (cheap: no code download). Null if the endpoint omits it. */
+export async function viewCodeHash(rpc: RpcClient, accountId: string): Promise<string | null> {
+  const res = await rpc.query<{ code_hash?: unknown }>({
+    request_type: "view_account",
+    finality: "final",
+    account_id: accountId,
+  });
+  return typeof res.code_hash === "string" ? res.code_hash : null;
+}
+
 /** Current network gas price in yoctoNEAR per gas unit (NEAR network fee, not a LAST fee). */
 export async function gasPrice(rpc: RpcClient): Promise<bigint> {
   const res = await rpc.call<{ gas_price: string }>("gas_price", [null]);

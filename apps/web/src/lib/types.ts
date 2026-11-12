@@ -81,6 +81,8 @@ export interface RawIntegrity {
   ops_reserve: string;
   credits_outstanding: string;
   prizes_outstanding: string;
+  /** v0.3: sent by a transfer promise, callback pending (subset of credits + prizes). */
+  in_flight: string;
   surplus: string;
 }
 
@@ -161,6 +163,8 @@ export interface Integrity {
   opsReserve: bigint;
   creditsOutstanding: bigint;
   prizesOutstanding: bigint;
+  /** v0.3: already left the balance with a pending transfer promise, still owed until confirmed. */
+  inFlight: bigint;
   surplus: bigint;
 }
 
@@ -336,6 +340,7 @@ export function parseIntegrity(raw: unknown): Integrity {
     opsReserve: u("ops_reserve"),
     creditsOutstanding: u("credits_outstanding"),
     prizesOutstanding: u("prizes_outstanding"),
+    inFlight: u("in_flight"),
     surplus: u("surplus"),
   };
 }
@@ -347,4 +352,12 @@ export function parseStorageBounds(raw: unknown): StorageBounds {
     min: parseU128(o.min, "min"),
     max: max === null || max === undefined ? null : parseU128(max, "max"),
   };
+}
+
+/**
+ * CONTRACT_API v0.3 solvency rule: `account_balance + in_flight >= storage_cost + total_obligations`
+ * (NEAR sent by a pending promise has left the balance but is still owed, or comes back).
+ */
+export function isSolvent(i: Integrity): boolean {
+  return i.accountBalance + i.inFlight >= i.storageCost + i.totalObligations;
 }

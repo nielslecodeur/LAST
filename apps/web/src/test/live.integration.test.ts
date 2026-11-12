@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_RPC_URLS, isTestnetAccountId } from "../config";
 import { LiveLastReader } from "../lib/reader";
 import { createRpcClient } from "../lib/rpc";
+import { isSolvent } from "../lib/types";
 
 const id = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LAST_LIVE_CONTRACT_ID;
 
@@ -29,8 +30,13 @@ describe.skipIf(!id)("LIVE testnet contract (read-only)", () => {
     expect(market.buyFeeBps).toBe(400);
     expect(market.sellFeeBps).toBe(200);
     expect(storage.min > 0n).toBe(true);
-    expect(integrity.accountBalance >= integrity.storageCost + integrity.totalObligations).toBe(true);
+    expect(isSolvent(integrity)).toBe(true); // v0.3: balance + in_flight >= storage + obligations
     expect(integrity.marketNearReserve).toBe(market.nearReserve);
+  });
+
+  it("Gate 2 methods are exported by the deployed code", async () => {
+    const caps = await reader.getCapabilities();
+    expect(caps).toMatchObject({ settleRound: true, claimReward: true, withdrawNearCredit: true, getRound: true });
   });
 
   it("quote_buy at the minimum is eligible", async () => {
