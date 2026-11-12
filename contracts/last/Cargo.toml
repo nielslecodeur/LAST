@@ -4,6 +4,7 @@ description = "LAST — Last Buyer Wins: NEP-141 token, internal NEAR/LAST marke
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

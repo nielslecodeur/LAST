@@ -4,6 +4,7 @@ description = "near-workspaces sandbox scenarios for the LAST contract"
 version = "0.1.0"
 edition = "2021"
 publish = false
+license = "MIT"
 
 # Standalone package: run from WSL/Linux (sandbox binary is Linux/macOS only).
 #   LAST_WASM=<path to last.wasm> cargo test --manifest-path tests/integration/Cargo.toml
