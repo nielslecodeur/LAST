@@ -26,6 +26,8 @@ cargo test --manifest-path contracts/last/Cargo.toml
 cd contracts/last && cargo near build non-reproducible-wasm
 ```
 
+The pure AMM functions are `market::calc_buy` / `calc_sell`: a free function must not share a name with a `#[near]` method (`quote_buy`, …), or the WASM build fails with E0428 while `cargo test` still passes.
+
 On Windows, near-sdk's `unit-testing` feature needs NASM + CMake; run tests from WSL instead, with the target dir outside OneDrive:
 
 ```bash
