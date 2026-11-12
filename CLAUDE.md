@@ -26,7 +26,13 @@ cargo test --manifest-path contracts/last/Cargo.toml
 cd contracts/last && cargo near build non-reproducible-wasm
 ```
 
-Sandbox tests (`near-workspaces`) may need Linux/WSL.
+On Windows, near-sdk's `unit-testing` feature needs NASM + CMake; run tests from WSL instead, with the target dir outside OneDrive:
+
+```bash
+wsl -d Ubuntu-24.04 -- bash -lc 'source ~/.cargo/env; cd "$(wslpath "<repo path>")" && CARGO_TARGET_DIR=~/last-target cargo test --manifest-path contracts/last/Cargo.toml'
+```
+
+Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`. Sandbox tests (`near-workspaces`) also run in Linux/WSL.
 
 ## Out of scope for V2
 
