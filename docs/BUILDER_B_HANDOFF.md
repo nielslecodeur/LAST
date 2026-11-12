@@ -1,5 +1,15 @@
 # Builder B — frontend handoff (checkpoint 2)
 
+> **Update — Gate 3 integrated (2026-11-12, 15:2x):** Builder A deployed LAST to **`last-armand.testnet`** (`docs/DEPLOYMENT.md`, source `ca30bf8`). Merged into `feat/web` (`5ce40a0`, no conflict, no API change). Verified **against the real testnet contract, read-only**:
+> - `LAST_LIVE_CONTRACT_ID=last-armand.testnet pnpm exec vitest run src/test/live.integration.test.ts` → **4 passed**: deployed on testnet, views parse, v0.3 solvency covered, Gate 2 exported, `quote_buy(0.03 NEAR)` eligible.
+> - The app in live mode (`apps/web/.env.local`, git-ignored) shows **LIVE · Gate 2 LIVE**, round #1 IDLE. Its values match `DEPLOYMENT.md` exactly: spot 0.000003, reserves 3 NEAR / 1,000,000 LAST, integrity 9.998 ≥ 2.3981 + 3, surplus 4.5999.
+> - Reload to live data: **714 ms** (capabilities cached by code hash).
+> - Fixed: during the deployment probe the UI said "Contract not deployed"; it now says "Connecting to contract…" (test added).
+> - Tests: 119 passed, 4 skipped (the live suite; it passes when `LAST_LIVE_CONTRACT_ID` is set, with a 30 s timeout for real RPC). Build OK.
+>
+> **Still not done:** no transaction signed from the UI and no real wallet connected yet. The next step is the human-run demo in `docs/WEB_DEMO_SCRIPT.md`.
+
+
 **Date:** 2026-11-12 · **Branch:** `feat/web` (local, not pushed: 4 commits ahead of `origin/feat/web`) · **Interface:** `docs/CONTRACT_API.md` **v0.3**
 **Scope:** `apps/web/`, `docs/BUILDER_B_HANDOFF.md`, `docs/WEB_DEMO_SCRIPT.md`, `docs/demo/`. No file of Builder A (`contracts/`, `tests/integration/`, `CONTRACT_API.md`, `CLAUDE.md`) was modified. Nothing was deployed or signed.
 

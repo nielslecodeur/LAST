@@ -2,7 +2,7 @@
 
 **Purpose:** a reproducible end-to-end demo of LAST — Steal the Crown for the NEAR Hackathon 2026 video.
 **Network:** NEAR Testnet only. Testnet NEAR has no value.
-**Status at writing (2026-11-12):** the contract is **not deployed** and Gate 2 (`settle_round`, `claim_reward`, `withdraw_near_credit`, `get_round`) is **not implemented yet**. Steps 1–6 need Gate 3 (deploy); steps 7–9 and the withdraw also need Gate 2. Nothing in this script has been run on testnet yet.
+**Status (2026-11-12):** Gates 1–3 done. The contract is deployed as **`last-armand.testnet`** (`docs/DEPLOYMENT.md`), and Gate 2 is exported and detected by the UI. Read-only checks against it passed. **No step of this script has been run with real wallets yet.**
 
 > Rule: a SIMULATED run (`pnpm dev:mock`) is a rehearsal only. It is never shown or described as a testnet run. Every frame of the final video must show the **NEAR TESTNET** and **LIVE** badges.
 
@@ -13,8 +13,8 @@
 | Item | Who | Detail |
 |---|---|---|
 | Contract deployed on testnet | Builder A (after human approval) | Demo config: `round_duration_ns = 120000000000` (2 min), `min_eligible_buy = 0.03 NEAR`, `seed_near = 3 NEAR`, plus a storage/gas buffer in the contract account |
-| Contract id in the web app | Builder B | `apps/web/.env.local` → `VITE_LAST_CONTRACT_ID=<id>.testnet`, then `pnpm --dir apps/web dev` |
-| Read-only check | Builder B | `LAST_LIVE_CONTRACT_ID=<id>.testnet pnpm --dir apps/web test src/test/live.integration.test.ts` must pass before recording |
+| Contract id in the web app | Builder B | `apps/web/.env.local` → `VITE_LAST_CONTRACT_ID=last-armand.testnet` (write it **without BOM**: on Windows PowerShell 5.1 `Set-Content -Encoding utf8` adds one and Vite ignores the variable), then `pnpm --dir apps/web dev` |
+| Read-only check | Builder B | `LAST_LIVE_CONTRACT_ID=last-armand.testnet pnpm --dir apps/web test src/test/live.integration.test.ts` must pass before recording (passed on 2026-11-12) |
 | Wallet A, Wallet B | presenter | Two distinct testnet accounts in a testnet-capable wallet (HOT Connect lists only wallets that support testnet). Use **two browser profiles** side by side (A left, B right) |
 | Explorer | — | https://testnet.nearblocks.io (links are in the app's toasts and activity panel) |
 

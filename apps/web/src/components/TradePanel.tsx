@@ -16,7 +16,13 @@ import { DEFAULT_SLIPPAGE_BPS, SLIPPAGE_PRESETS_BPS, applySlippage, parseSlippag
 import { GAS, buildBuyTx, buildSellTx } from "../lib/transactions";
 import { isBusy } from "../lib/txMachine";
 import type { BuyQuote, SellQuote } from "../lib/types";
-import { BLOCKER_TEXT, checkBuy, checkSell } from "../lib/validation";
+import { BLOCKER_TEXT, type Blocker, checkBuy, checkSell } from "../lib/validation";
+import type { Deployment } from "../hooks/useLast";
+
+/** While the contract is being probed, "not deployed" would be a false statement. */
+function blockerText(b: Blocker, deployment: Deployment): string {
+  return b === "NOT_DEPLOYED" && deployment === "checking" ? "Connecting to contract…" : BLOCKER_TEXT[b];
+}
 import { PREFILL_BUY_EVENT } from "./Hero";
 import { Button, Card, CrownIcon, Row, cx } from "./ui";
 
@@ -101,7 +107,7 @@ function ImpactRow({ bps }: { bps: bigint | null }) {
 // ------------------------------------------------------------------ Buy
 
 function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { value: string; n: number } | null }) {
-  const { reader, market, game, account, nearBalance, storage, accountId, walletError, deployed, tx, run, connect } = useLast();
+  const { reader, market, game, account, nearBalance, storage, accountId, walletError, deployed, deployment, tx, run, connect } = useLast();
   const [input, setInput] = useState("");
   useEffect(() => {
     if (prefill) setInput(prefill.value);
@@ -124,7 +130,7 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
     storage,
     minEligibleBuy: market?.minEligibleBuy ?? null,
   });
-  const blocker = walletError ? "Wrong network" : check.blocker ? BLOCKER_TEXT[check.blocker] : null;
+  const blocker = walletError ? "Wrong network" : check.blocker ? blockerText(check.blocker, deployment) : null;
   const minOut = quote ? applySlippage(quote.tokensOut, slippageBps) : null;
   const impact = quote && market ? buyPriceImpactBps(market.nearReserve, market.lastInventory, quote.netNear, quote.tokensOut) : null;
   const presets = useMemo(() => {
@@ -212,7 +218,7 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
 // ------------------------------------------------------------------ Sell
 
 function SellForm({ slippageBps }: { slippageBps: bigint }) {
-  const { reader, market, game, account, accountId, walletError, deployed, tx, run, connect } = useLast();
+  const { reader, market, game, account, accountId, walletError, deployed, deployment, tx, run, connect } = useLast();
   const [input, setInput] = useState("");
   const tokensIn = tryParseUnits(input, LAST_DECIMALS);
   const invalid = input.trim() !== "" && tokensIn === null;
@@ -222,7 +228,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
   const { quote, loading, error } = useQuote<SellQuote>(deployed && reader ? fetcher : null, tokensIn, marketKey);
 
   const check = checkSell({ deployed, accountId, status: game?.status ?? null, tokensIn, quote, account });
-  const blocker = walletError ? "Wrong network" : check ? BLOCKER_TEXT[check] : null;
+  const blocker = walletError ? "Wrong network" : check ? blockerText(check, deployment) : null;
   const minOut = quote ? applySlippage(quote.payout, slippageBps) : null;
   const impact = quote && market && tokensIn ? sellPriceImpactBps(market.nearReserve, market.lastInventory, tokensIn, quote.grossNearOut) : null;
 

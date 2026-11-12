@@ -19,7 +19,7 @@ const PHASE_BADGE: Record<DisplayPhase, { tone: "acid" | "heat" | "gold" | "mute
 export const PREFILL_BUY_EVENT = "last:prefill-buy";
 
 export function Hero() {
-  const { game, market, clock, accountId, deployed, simulated, config, rounds } = useLast();
+  const { game, market, clock, accountId, deployed, deployment, simulated, config, rounds } = useLast();
   const { remaining, phase } = useCountdown(game, clock);
 
   // Crown change / settlement → animation + announcement (only on confirmed reads).
@@ -82,7 +82,7 @@ export function Hero() {
       <p className="sr-only" aria-live="polite">{announce}</p>
 
       <div className="flex flex-wrap items-center gap-2">
-        {phase ? <Badge tone={PHASE_BADGE[phase].tone}>{PHASE_BADGE[phase].text}</Badge> : <Badge>{deployed ? "Loading" : "No live data"}</Badge>}
+        {phase ? <Badge tone={PHASE_BADGE[phase].tone}>{PHASE_BADGE[phase].text}</Badge> : <Badge>{deployed ? "Loading" : deployment === "checking" ? "Connecting to contract…" : "No live data"}</Badge>}
         {game && <Badge tone="sky">Round #{game.roundId.toString()}</Badge>}
         {duration !== null && <Badge>Timer {formatDuration(duration)}</Badge>}
       </div>
@@ -162,7 +162,9 @@ export function Hero() {
             style={{ width: `${(pct * 100).toFixed(2)}%` }}
           />
         </div>
-        <p className="mt-3 text-sm text-text/80">{phaseHint(phase, youLead, minBuy, duration, game)}</p>
+        <p className="mt-3 text-sm text-text/80">
+          {phase === null && deployment === "checking" ? "Reading the LAST contract on NEAR Testnet…" : phaseHint(phase, youLead, minBuy, duration, game)}
+        </p>
       </div>
 
       {/* Victory (after on-chain settlement) */}

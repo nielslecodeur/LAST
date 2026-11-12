@@ -6,13 +6,13 @@ import { Button, Card, Row } from "./ui";
 
 /** Sale proceeds are a pull payout: `sell` credits, `withdraw_near_credit` pays (Gate 2). */
 export function CreditPanel() {
-  const { account, accountId, walletError, capabilities, deployed, tx, run, reader } = useLast();
+  const { account, accountId, walletError, capabilities, deployed, deployment, tx, run, reader } = useLast();
   const available = account?.creditAvailable ?? null;
   const inFlight = account?.creditInFlight ?? null;
   const can = capabilities.withdrawNearCredit;
 
   let label = "Withdraw NEAR";
-  if (!deployed) label = "Contract not deployed";
+  if (!deployed) label = deployment === "checking" ? "Connecting to contract…" : "Contract not deployed";
   else if (!can) label = "Withdraw — pending Gate 2";
   else if (!accountId) label = "Connect wallet";
   else if (walletError) label = "Wrong network";

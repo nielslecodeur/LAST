@@ -91,3 +91,16 @@ describe("SIMULATED, Gate 2 available", () => {
     expect(button(/Round over — settle first/).disabled).toBe(true);
   });
 });
+
+describe("while the contract is being probed", () => {
+  it("never claims the contract is not deployed", async () => {
+    const pending = new Promise<never>(() => undefined); // probe that never answers
+    const sim = new SimulatedChain();
+    const reader = Object.assign(Object.create(sim), { kind: "live", getCapabilities: () => pending }) as LastReader;
+    mount(resolveConfig({ VITE_LAST_CONTRACT_ID: "last.testnet" }), reader);
+    await flush();
+    expect(screen.queryByText(/CONTRACT NOT DEPLOYED/)).toBeNull();
+    expect(screen.getAllByText(/Connecting to contract/).length).toBeGreaterThan(0);
+    expect(screen.getByText("CHECKING…")).toBeTruthy();
+  });
+});

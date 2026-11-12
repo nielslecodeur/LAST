@@ -10,7 +10,8 @@ import { isSolvent } from "../lib/types";
 
 const id = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LAST_LIVE_CONTRACT_ID;
 
-describe.skipIf(!id)("LIVE testnet contract (read-only)", () => {
+// Real RPC round trips (incl. the WASM download) take longer than vitest's 5 s default.
+describe.skipIf(!id)("LIVE testnet contract (read-only)", { timeout: 30_000 }, () => {
   const reader = new LiveLastReader(createRpcClient(DEFAULT_RPC_URLS), id ?? "");
 
   it("is a testnet account with deployed code", async () => {
