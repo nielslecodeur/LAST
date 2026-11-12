@@ -1,0 +1,33 @@
+{
+  "name": "last-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "LAST — Last Buyer Wins: web frontend (NEAR Testnet only)",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hot-labs/near-connect": "0.12.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "jsdom": "30.1.3",
+    "tailwindcss": "4.3.5",
+    "typescript": "6.0.3",
+    "vite": "8.2.6",
+    "vitest": "5.0.5"
+  }
+}
