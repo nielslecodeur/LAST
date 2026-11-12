@@ -178,3 +178,19 @@ describe("RPC load (public endpoints rate-limit)", () => {
     expect(calls.getGameState! - start).toBeLessThanOrEqual(8);
   });
 });
+
+describe("Council recommendations: starting pot + disclosure", () => {
+  it("labels the carry-over as the Starting pot and discloses locked fees + full-access key", async () => {
+    const sim = new SimulatedChain();
+    sim.nextSeedPot = 795n * 10n ** 18n; // an idle round with a carried-over pot
+    sim.treasury = 3n * 10n ** 21n;
+    sim.ops = 10n ** 21n;
+    await simulated(sim);
+    expect(screen.getByText(/Starting pot/)).toBeTruthy();
+    expect(screen.getByText(/joins the jackpot on the first eligible buy/)).toBeTruthy();
+    expect(screen.getByText(/20% of every LAST fee/)).toBeTruthy();
+    expect(screen.getByText(/now 0.004 NEAR/)).toBeTruthy(); // treasury + ops, read from state
+    expect(screen.getAllByText(/the contract is not immutable/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/still holds a full-access key/)).toBeTruthy();
+  });
+});

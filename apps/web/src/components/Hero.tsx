@@ -102,7 +102,9 @@ export function Hero() {
             <span className="font-mono text-xl font-bold text-gold/80">NEAR</span>
           </div>
           <div className="mt-1 text-sm text-mute">
-            Next round seed: <span className="font-mono text-text/90">{game ? `${formatNear(game.nextSeedPot, 4)} NEAR` : "—"}</span>
+            {game?.status === "IDLE" ? "Starting pot" : "Next round's starting pot"}:{" "}
+            <span className="font-mono text-text/90">{game ? `${formatNear(game.nextSeedPot, 4)} NEAR` : "—"}</span>
+            {game?.status === "IDLE" && game.nextSeedPot > 0n && <> · carried over, joins the jackpot on the first eligible buy</>}
           </div>
         </div>
 

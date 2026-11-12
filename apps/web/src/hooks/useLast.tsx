@@ -64,6 +64,8 @@ export interface LastData {
   storage: StorageBounds | null;
   integrity: Integrity | null;
   gasPrice: bigint | null;
+  /** FullAccess keys on the contract account (read once; null = unknown). */
+  fullAccessKeys: number | null;
   rounds: Map<string, RoundView | null>;
   clock: ChainClock | null;
 }
@@ -109,6 +111,7 @@ const EMPTY: LastData = {
   storage: null,
   integrity: null,
   gasPrice: null,
+  fullAccessKeys: null,
   rounds: new Map(),
   clock: null,
 };
@@ -235,13 +238,15 @@ export function LastProvider(props: {
           prev.game.status !== game.status;
         const needMain = !light || gameMoved || n % MAIN_EVERY === 0 || (who !== null && prev.account === null);
         const slow = n % SLOW_EVERY === 0 || prev.integrity === null;
-        const [market, account, nearBalance, integrity, storage, gasPrice] = await Promise.all([
+        const [market, account, nearBalance, integrity, storage, gasPrice, fullAccessKeys] = await Promise.all([
           needMain ? reader.getMarketState() : Promise.resolve(prev.market),
           who && needMain ? reader.getAccountState(who) : Promise.resolve(who ? prev.account : null),
           who && needMain ? reader.getNearBalance(who) : Promise.resolve(who ? prev.nearBalance : null),
           slow ? reader.getIntegrity() : Promise.resolve(prev.integrity),
           prev.storage ? Promise.resolve(prev.storage) : reader.getStorageBounds(), // fixed at deploy
           slow || prev.gasPrice === null ? reader.getGasPrice().catch(() => prev.gasPrice) : Promise.resolve(prev.gasPrice),
+          // disclosure only: a failed read stays "unknown", never blocks the game data
+          slow && (prev.fullAccessKeys === null || !light) ? reader.getContractFullAccessKeys().catch(() => prev.fullAccessKeys) : Promise.resolve(prev.fullAccessKeys),
         ]);
 
         let rounds = prev.rounds;
@@ -274,6 +279,7 @@ export function LastProvider(props: {
           integrity,
           storage,
           gasPrice,
+          fullAccessKeys,
           account: who === accountRef.current ? account : null,
           nearBalance: who === accountRef.current ? nearBalance : null,
           rounds,

@@ -181,6 +181,10 @@ export class SimulatedChain implements LastReader, LastWriter {
     return 100_000_000n; // simulated: NEAR's minimum gas price
   }
 
+  async getContractFullAccessKeys() {
+    return 1; // simulated: like the testnet deployment, the owner keeps a key
+  }
+
   async getRound(id: bigint): Promise<RoundView | null> {
     if (!this.gate2) panic("MethodNotFound");
     return this.settled.get(id.toString()) ?? null;

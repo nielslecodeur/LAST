@@ -204,6 +204,20 @@ export async function viewCodeHash(rpc: RpcClient, accountId: string): Promise<s
   return typeof res.code_hash === "string" ? res.code_hash : null;
 }
 
+/**
+ * Number of FullAccess keys on an account. > 0 on a contract account means its owner can deploy
+ * new code, i.e. the contract's rules are NOT immutable (disclosed in the UI, read live).
+ */
+export async function fullAccessKeyCount(rpc: RpcClient, accountId: string): Promise<number> {
+  const res = await rpc.query<{ keys?: Array<{ access_key?: { permission?: unknown } }> }>({
+    request_type: "view_access_key_list",
+    finality: "final",
+    account_id: accountId,
+  });
+  if (!Array.isArray(res.keys)) throw new RpcError("rpc", "view_access_key_list: bad response");
+  return res.keys.filter((k) => k.access_key?.permission === "FullAccess").length;
+}
+
 /** Current network gas price in yoctoNEAR per gas unit (NEAR network fee, not a LAST fee). */
 export async function gasPrice(rpc: RpcClient): Promise<bigint> {
   const res = await rpc.call<{ gas_price: string }>("gas_price", [null]);

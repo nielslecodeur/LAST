@@ -4,7 +4,7 @@
  */
 
 import { FeatureUnavailableError } from "./errors";
-import { EMPTY_CODE_HASH, RpcError, type RpcClient, chainId, gasPrice, viewAccountBalance, viewCode, viewCodeHash, viewFunction } from "./rpc";
+import { EMPTY_CODE_HASH, RpcError, type RpcClient, chainId, fullAccessKeyCount, gasPrice, viewAccountBalance, viewCode, viewCodeHash, viewFunction } from "./rpc";
 import {
   type AccountState,
   type BuyQuote,
@@ -41,6 +41,8 @@ export interface LastReader {
   getNearBalance(accountId: string): Promise<bigint>;
   /** NEAR network gas price, yoctoNEAR per gas unit. */
   getGasPrice(): Promise<bigint>;
+  /** FullAccess keys on the contract account (> 0 = owner can replace the code: not immutable). */
+  getContractFullAccessKeys(): Promise<number>;
   /** Gate 2. Throws FeatureUnavailableError when the contract does not export it. */
   getRound(roundId: bigint): Promise<RoundView | null>;
   /** Which Gate 2 methods exist in the deployed code. */
@@ -171,6 +173,9 @@ export class LiveLastReader implements LastReader {
   }
   async getGasPrice() {
     return gasPrice(this.rpc);
+  }
+  async getContractFullAccessKeys() {
+    return fullAccessKeyCount(this.rpc, this.contractId);
   }
   async getRound(roundId: bigint) {
     const caps = await this.getCapabilities();

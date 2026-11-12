@@ -184,6 +184,18 @@ describe("LiveLastReader", () => {
     await expect(r.probeDeployment()).resolves.toEqual({ state: "no_code" });
   });
 
+  it("counts FullAccess keys on the contract account (immutability disclosure)", async () => {
+    const r = reader(() =>
+      ok({
+        keys: [
+          { public_key: "ed25519:A", access_key: { nonce: 1, permission: "FullAccess" } },
+          { public_key: "ed25519:B", access_key: { nonce: 1, permission: { FunctionCall: { receiver_id: "x", method_names: [] } } } },
+        ],
+      }),
+    );
+    await expect(r.getContractFullAccessKeys()).resolves.toBe(1);
+  });
+
   it("refuses a non-testnet RPC endpoint before reading anything", async () => {
     const calls: string[] = [];
     const r = reader((p) => {

@@ -52,7 +52,8 @@ export function App() {
         <div className="mx-auto max-w-7xl space-y-2 px-4 py-6 text-xs text-mute sm:px-6">
           <p>
             <strong className="text-text/80">NEAR Testnet only — no monetary value.</strong> Experimental, unaudited prize game. Price impact, fees, bots and
-            transaction ordering can cause losses. Not an investment.
+            transaction ordering can cause losses. Not an investment. 20% of fees are locked in V1 (no withdraw method), and the
+            contract is not immutable while its account keeps a full-access key (see Market → Disclosure).
           </p>
           <p>
             Contract:{" "}
