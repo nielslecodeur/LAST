@@ -4,7 +4,7 @@
  */
 
 import { FeatureUnavailableError } from "./errors";
-import { RpcError, type RpcClient, viewAccountBalance, viewCode, viewFunction } from "./rpc";
+import { RpcError, type RpcClient, chainId, gasPrice, viewAccountBalance, viewCode, viewFunction } from "./rpc";
 import {
   type AccountState,
   type BuyQuote,
@@ -37,7 +37,10 @@ export interface LastReader {
   quoteBuy(grossNear: bigint): Promise<BuyQuote>;
   quoteSell(tokensIn: bigint): Promise<SellQuote>;
   getStorageBounds(): Promise<StorageBounds>;
+  /** Spendable NEAR (storage-locked part excluded). */
   getNearBalance(accountId: string): Promise<bigint>;
+  /** NEAR network gas price, yoctoNEAR per gas unit. */
+  getGasPrice(): Promise<bigint>;
   /** Gate 2. Throws FeatureUnavailableError when the contract does not export it. */
   getRound(roundId: bigint): Promise<RoundView | null>;
   /** Which Gate 2 methods exist in the deployed code. */
@@ -48,7 +51,9 @@ export interface LastReader {
 export type DeploymentStatus =
   | { state: "deployed"; capabilities: Capabilities }
   | { state: "no_account" }
-  | { state: "no_code" };
+  | { state: "no_code" }
+  /** The RPC endpoint is not NEAR Testnet (e.g. a mainnet URL was configured). Nothing is read. */
+  | { state: "wrong_network"; chainId: string };
 
 export function capabilitiesFromExports(exports: Set<string>): Capabilities {
   return {
@@ -72,6 +77,8 @@ export class LiveLastReader implements LastReader {
 
   /** Distinguishes "account missing" / "no code" from a real deployment, and caches capabilities. */
   async probeDeployment(): Promise<DeploymentStatus> {
+    const chain = await chainId(this.rpc);
+    if (chain !== "testnet") return { state: "wrong_network", chainId: chain };
     try {
       const code = await viewCode(this.rpc, this.contractId);
       this.caps = capabilitiesFromExports(wasmFunctionExports(code));
@@ -116,6 +123,9 @@ export class LiveLastReader implements LastReader {
   }
   async getNearBalance(accountId: string) {
     return viewAccountBalance(this.rpc, accountId);
+  }
+  async getGasPrice() {
+    return gasPrice(this.rpc);
   }
   async getRound(roundId: bigint) {
     const caps = await this.getCapabilities();

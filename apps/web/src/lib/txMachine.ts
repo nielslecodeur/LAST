@@ -2,20 +2,21 @@
  * Transaction lifecycle, independent of React:
  *
  *   idle → signing → pending → confirmed
+ *              │         ├──→ unresolved   (executed, but the on-chain effect is not visible yet,
+ *              │         │                  or a payout is still IN_FLIGHT — never a success)
  *              │         └──→ failed
  *              └──→ rejected | failed
  *
- * - signing:   waiting for the wallet (user approval + broadcast + execution).
- * - pending:   the wallet returned a successful outcome; we are re-reading contract views so the
- *              UI shows *confirmed state*, not an optimistic guess (SPEC §1.2: no optimistic
- *              winner update).
- * - confirmed: outcome succeeded and views were refreshed.
+ * - signing:    waiting for the wallet (user approval + broadcast + execution).
+ * - pending:    the wallet returned a successful outcome; we re-read contract views until they
+ *               show the expected effect (SPEC §1.2: no optimistic winner update).
+ * - confirmed:  outcome succeeded AND fresh contract state shows the effect.
  */
 
 import type { UiError } from "./errors";
 import type { TxKind } from "./transactions";
 
-export type TxPhase = "idle" | "signing" | "pending" | "confirmed" | "failed" | "rejected";
+export type TxPhase = "idle" | "signing" | "pending" | "confirmed" | "unresolved" | "failed" | "rejected";
 
 export interface TxState {
   phase: TxPhase;
@@ -23,6 +24,8 @@ export interface TxState {
   label: string | null;
   hash: string | null;
   error: UiError | null;
+  /** Extra context on success / unresolved (e.g. "took the crown", "IN_FLIGHT"). */
+  note: string | null;
 }
 
 export type TxEvent =
@@ -30,16 +33,17 @@ export type TxEvent =
   | { type: "OUTCOME_OK"; hash: string | null }
   | { type: "OUTCOME_FAILED"; hash: string | null; error: UiError }
   | { type: "THROWN"; error: UiError }
-  | { type: "RECONCILED" }
+  | { type: "RECONCILED"; note?: string | null }
+  | { type: "UNRESOLVED"; note: string }
   | { type: "RESET" };
 
-export const IDLE_TX: TxState = { phase: "idle", kind: null, label: null, hash: null, error: null };
+export const IDLE_TX: TxState = { phase: "idle", kind: null, label: null, hash: null, error: null, note: null };
 
 export function txReducer(state: TxState, ev: TxEvent): TxState {
   switch (ev.type) {
     case "SIGN":
       if (isBusy(state)) return state; // one transaction at a time
-      return { phase: "signing", kind: ev.kind, label: ev.label, hash: null, error: null };
+      return { phase: "signing", kind: ev.kind, label: ev.label, hash: null, error: null, note: null };
     case "OUTCOME_OK":
       return state.phase === "signing" ? { ...state, phase: "pending", hash: ev.hash } : state;
     case "OUTCOME_FAILED":
@@ -48,7 +52,9 @@ export function txReducer(state: TxState, ev: TxEvent): TxState {
       if (state.phase !== "signing") return state;
       return { ...state, phase: ev.error.kind === "rejected" ? "rejected" : "failed", error: ev.error };
     case "RECONCILED":
-      return state.phase === "pending" ? { ...state, phase: "confirmed" } : state;
+      return state.phase === "pending" ? { ...state, phase: "confirmed", note: ev.note ?? null } : state;
+    case "UNRESOLVED":
+      return state.phase === "pending" ? { ...state, phase: "unresolved", note: ev.note } : state;
     case "RESET":
       return isBusy(state) ? state : IDLE_TX;
   }

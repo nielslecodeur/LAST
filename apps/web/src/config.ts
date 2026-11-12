@@ -31,10 +31,19 @@ export function isValidAccountId(id: string): boolean {
   return id.length >= 2 && id.length <= 64 && ACCOUNT_ID_RE.test(id);
 }
 
-/** Testnet accounts: named `*.testnet`, or 64-hex implicit accounts. Anything `.near` is mainnet. */
+/**
+ * Usable on testnet: named `*.testnet`, 64-hex implicit accounts, or `0x…` (40 hex) ETH-implicit
+ * accounts. Anything else (e.g. `*.near`) is a mainnet name.
+ */
 export function isTestnetAccountId(id: string): boolean {
   if (!isValidAccountId(id)) return false;
-  return id.endsWith(".testnet") || /^[0-9a-f]{64}$/.test(id);
+  return id.endsWith(".testnet") || /^[0-9a-f]{64}$/.test(id) || /^0x[0-9a-f]{40}$/.test(id);
+}
+
+/** Message when a connected wallet account cannot be a NEAR Testnet account, else null. */
+export function walletNetworkProblem(accountId: string): string | null {
+  if (isTestnetAccountId(accountId)) return null;
+  return `"${accountId}" is not a NEAR Testnet account. Switch your wallet to testnet — LAST never touches mainnet.`;
 }
 
 interface RawEnv {
@@ -76,6 +85,14 @@ export function resolveConfig(env: RawEnv): AppConfig {
 }
 
 export const config: AppConfig = resolveConfig(import.meta.env as RawEnv);
+
+/**
+ * `?demo=1`: presenter helpers for the hackathon video (e.g. a "claim again" button on an already
+ * PAID prize, to show the CONTRACT rejecting a double claim). Never fakes data or outcomes.
+ */
+export function isDemoMode(search = typeof location === "undefined" ? "" : location.search): boolean {
+  return new URLSearchParams(search).get("demo") === "1";
+}
 
 export function explorerTxUrl(hash: string, base = config.explorerUrl): string {
   return `${base}/txns/${encodeURIComponent(hash)}`;

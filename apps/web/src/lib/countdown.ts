@@ -23,6 +23,35 @@ export function estimateChainNowNs(clock: ChainClock, localNowMs: number): bigin
   return clock.chainNowNs + BigInt(elapsedMs) * NS_PER_MS;
 }
 
+/**
+ * Clock sample from one `get_game_state` round trip. The block time is attributed to the
+ * midpoint of the request (half the round-trip latency), not to its arrival.
+ */
+export function sampleClock(chainNowNs: bigint, sentAtMs: number, receivedAtMs: number): ChainClock {
+  return { chainNowNs, localAtMs: sentAtMs + Math.max(0, receivedAtMs - sentAtMs) / 2 };
+}
+
+/** A sample implying chain time this far *behind* the running estimate means the local clock jumped. */
+export const CLOCK_RESYNC_MS = 5_000;
+
+/**
+ * Merges a new sample into the running clock instead of overwriting it.
+ *
+ * Every sample UNDER-estimates chain time (final-block lag + network latency), never over-estimates
+ * it, so the sample implying the latest chain time is the best one: keep it. Effect: the countdown
+ * no longer jumps back up by a second when one poll is slower than the previous one.
+ * Exception: if the new sample is more than CLOCK_RESYNC_MS behind the estimate, the local clock
+ * was changed (system time adjusted) → resync to the new sample. Sleep/resume needs no special case:
+ * local time and chain time both advanced, and the next poll refreshes the sample.
+ */
+export function mergeClock(prev: ChainClock | null, next: ChainClock, resyncMs = CLOCK_RESYNC_MS): ChainClock {
+  if (!prev) return next;
+  const predicted = estimateChainNowNs(prev, next.localAtMs);
+  if (next.chainNowNs >= predicted) return next;
+  if (predicted - next.chainNowNs > BigInt(resyncMs) * NS_PER_MS) return next;
+  return prev;
+}
+
 /** Remaining milliseconds before `deadlineNs`, floored at 0. */
 export function remainingMs(deadlineNs: bigint, chainNowNs: bigint): number {
   const diff = deadlineNs - chainNowNs;

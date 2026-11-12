@@ -113,8 +113,14 @@ describe("WASM export parsing → Gate 2 capabilities", () => {
 });
 
 describe("LiveLastReader", () => {
-  function reader(handler: (params: Record<string, unknown>) => Response) {
-    const fetch = vi.fn(async (_u: string, init: RequestInit) => handler(JSON.parse(String(init.body)).params));
+  /** Stub RPC: answers `status` as testnet unless overridden; `handler` gets `query` params. */
+  function reader(handler: (params: Record<string, unknown>) => Response, chain = "testnet") {
+    const fetch = vi.fn(async (_u: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.method === "status") return ok({ chain_id: chain });
+      if (body.method === "gas_price") return ok({ gas_price: "100000000" });
+      return handler(body.params);
+    });
     return new LiveLastReader(createRpcClient(["https://a.example"], { fetch }), "last.testnet");
   }
 
@@ -126,6 +132,23 @@ describe("LiveLastReader", () => {
     const dep = reader(() => ok({ code_base64: toBase64(wasmWithExports(["buy", "get_round"])) }));
     const st = await dep.probeDeployment();
     expect(st.state).toBe("deployed");
+  });
+
+  it("refuses a non-testnet RPC endpoint before reading anything", async () => {
+    const calls: string[] = [];
+    const r = reader((p) => {
+      calls.push(String(p.request_type));
+      return ok({});
+    }, "mainnet");
+    await expect(r.probeDeployment()).resolves.toEqual({ state: "wrong_network", chainId: "mainnet" });
+    expect(calls).toEqual([]);
+  });
+
+  it("NEAR balance excludes the storage-locked part; gas price is read from the network", async () => {
+    const r = reader(() => ok({ amount: "5000000000000000000000000", storage_usage: 182 }));
+    // 5 NEAR − 182 bytes × 10^19
+    await expect(r.getNearBalance("a.testnet")).resolves.toBe(5n * 10n ** 24n - 182n * 10n ** 19n);
+    await expect(r.getGasPrice()).resolves.toBe(100_000_000n);
   });
 
   it("parses get_game_state into bigint fields", async () => {

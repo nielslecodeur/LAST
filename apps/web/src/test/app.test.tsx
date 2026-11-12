@@ -73,7 +73,7 @@ describe("SIMULATED, Gate 1 contract (Gate 2 not available)", () => {
     sim.buy(SIM_USER, 3n * 10n ** 22n, 0n);
     await simulated(sim);
     expect(screen.getByText(/That's you/)).toBeTruthy();
-    expect(screen.getAllByText(/^ACTIVE$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/round active/).length).toBeGreaterThan(0);
   });
 });
 

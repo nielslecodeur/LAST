@@ -1,7 +1,7 @@
-import { explorerAccountUrl } from "../config";
+import { explorerAccountUrl, isDemoMode } from "../config";
 import { useLast } from "../hooks/useLast";
 import { formatNear } from "../lib/amounts";
-import { canSettle, claimableFor, recentRoundIds, shortAccount } from "../lib/game";
+import { canSettle, claimableFor, paidWinsOf, recentRoundIds, shortAccount } from "../lib/game";
 import { buildClaimTx, buildSettleTx } from "../lib/transactions";
 import { isBusy } from "../lib/txMachine";
 import type { ClaimStatus, RoundView } from "../lib/types";
@@ -11,13 +11,16 @@ import { Badge, Button, Card, CrownIcon, ExternalLink } from "./ui";
 const CLAIM_TONE: Record<ClaimStatus, "acid" | "gold" | "mute"> = { AVAILABLE: "acid", IN_FLIGHT: "gold", PAID: "mute" };
 
 export function RewardsPanel() {
-  const { game, account, rounds, accountId, capabilities, deployed, tx, run, reader, simulated, config } = useLast();
+  const { game, account, rounds, accountId, capabilities, deployed, tx, run, reader, simulated, config, walletError } = useLast();
   const settle = canSettle(game, capabilities);
   const mine = claimableFor(account, rounds, accountId);
+  const paid = paidWinsOf(rounds, accountId);
   const recent = recentRoundIds(game?.lastSettledRoundId ?? null)
     .map((id) => rounds.get(id.toString()) ?? null)
     .filter((r): r is RoundView => r !== null);
   const lastWinner = recent[0] ?? null;
+  const busy = isBusy(tx);
+  const canSign = !!accountId && !walletError && !busy;
 
   const accountLink = (id: string) =>
     simulated ? shortAccount(id) : <ExternalLink href={explorerAccountUrl(id, config.explorerUrl)}>{shortAccount(id)}</ExternalLink>;
@@ -27,18 +30,25 @@ export function RewardsPanel() {
       {/* Settle */}
       {game?.status === "EXPIRED" && (
         <div className="mb-4 rounded-xl border border-heat/40 bg-heat/10 p-4">
-          <div className="font-semibold">Round #{game.roundId.toString()} has expired on-chain.</div>
+          <div className="font-semibold">Round #{game.roundId.toString()} has expired on-chain — settlement pending.</div>
           <p className="mt-1 text-sm text-text/80">
-            Winner: <span className="font-mono">{game.leader ? accountLink(game.leader) : "—"}</span> · prize {formatNear(game.activePot)} NEAR. Anyone can settle; settling
-            moves the prize into the winner's claim and reopens trading.
+            Leader at expiry: <span className="font-mono">{game.leader ? accountLink(game.leader) : "—"}</span> · prize{" "}
+            {formatNear(game.activePot)} NEAR. The win is final once anyone settles: settling moves the prize into the winner's claim and reopens
+            trading.
           </p>
           <Button
             variant="danger"
             className="mt-3 w-full"
-            disabled={!settle.allowed || !accountId || isBusy(tx)}
+            disabled={!settle.allowed || !canSign}
             onClick={() => reader && void run(buildSettleTx(reader.contractId, capabilities, game.roundId))}
           >
-            {!settle.allowed ? "Settle round — pending Gate 2" : !accountId ? "Connect wallet to settle" : isBusy(tx) && tx.kind === "settle" ? "Confirm in wallet…" : `Settle round #${game.roundId}`}
+            {!settle.allowed
+              ? "Settle round — pending Gate 2"
+              : !accountId
+                ? "Connect wallet to settle"
+                : busy && tx.kind === "settle"
+                  ? "Confirm in wallet…"
+                  : `Settle round #${game.roundId}`}
           </Button>
           {settle.reason && <p className="mt-2 text-xs text-gold">{settle.reason}</p>}
         </div>
@@ -48,23 +58,56 @@ export function RewardsPanel() {
       {accountId && mine.length > 0 && (
         <div className="mb-4 space-y-2">
           <div className="text-xs font-semibold uppercase tracking-wider text-acid">Your prizes</div>
-          {mine.map((r) => (
-            <div key={r.roundId.toString()} className="flex items-center justify-between gap-3 rounded-xl border border-acid/40 bg-acid/5 p-3">
-              <div>
-                <div className="font-mono font-bold">{formatNear(r.prize)} NEAR</div>
-                <div className="text-xs text-mute">Round #{r.roundId.toString()} · <Badge tone={CLAIM_TONE[r.claimStatus]}>{r.claimStatus}</Badge></div>
+          {mine.map(({ roundId, round }) => {
+            const status = round?.claimStatus ?? null;
+            return (
+              <div key={roundId.toString()} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-acid/40 bg-acid/5 p-3">
+                <div>
+                  <div className="font-mono font-bold">{round ? `${formatNear(round.prize)} NEAR` : "Prize"}</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-mute">
+                    Round #{roundId.toString()}
+                    {status ? <Badge tone={CLAIM_TONE[status]}>{status}</Badge> : <Badge>details need get_round</Badge>}
+                  </div>
+                </div>
+                <Button
+                  disabled={!capabilities.claimReward || (status !== null && status !== "AVAILABLE") || !canSign}
+                  onClick={() => reader && void run(buildClaimTx(reader.contractId, capabilities, roundId))}
+                >
+                  {!capabilities.claimReward
+                    ? "Claim — pending Gate 2"
+                    : status === "IN_FLIGHT"
+                      ? "Payment in flight…"
+                      : busy && tx.kind === "claim"
+                        ? "Confirm in wallet…"
+                        : "Claim reward"}
+                </Button>
               </div>
-              <Button
-                disabled={!capabilities.claimReward || r.claimStatus !== "AVAILABLE" || isBusy(tx)}
-                onClick={() => reader && void run(buildClaimTx(reader.contractId, capabilities, r.roundId))}
-              >
-                {!capabilities.claimReward ? "Pending Gate 2" : r.claimStatus === "IN_FLIGHT" ? "Payment in flight…" : "Claim reward"}
-              </Button>
-            </div>
-          ))}
-          {mine.some((r) => r.claimStatus === "IN_FLIGHT") && (
-            <p className="text-xs text-gold">IN_FLIGHT means the transfer was sent but its result is not confirmed yet. It is not a final payment.</p>
+            );
+          })}
+          {mine.some((m) => m.round?.claimStatus === "IN_FLIGHT") && (
+            <p className="text-xs text-gold">IN_FLIGHT: the transfer was sent but the contract has not confirmed it yet. It is not a final payment.</p>
           )}
+        </div>
+      )}
+      {accountId && mine.length === 0 && deployed && (
+        <p className="mb-4 text-sm text-mute">No prize to claim for {shortAccount(accountId)}.</p>
+      )}
+
+      {/* Presenter helper: show the contract rejecting a double claim (?demo=1 only). */}
+      {isDemoMode() && capabilities.claimReward && paid.length > 0 && (
+        <div className="mb-4 rounded-xl border border-dashed border-line p-3 text-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-mute">Demo · double-claim check</div>
+          {paid.slice(0, 1).map((r) => (
+            <Button
+              key={r.roundId.toString()}
+              variant="secondary"
+              className="mt-2 w-full"
+              disabled={!canSign}
+              onClick={() => reader && void run(buildClaimTx(reader.contractId, capabilities, r.roundId))}
+            >
+              Claim round #{r.roundId.toString()} again — the contract must reject it
+            </Button>
+          ))}
         </div>
       )}
 
@@ -75,11 +118,16 @@ export function RewardsPanel() {
         </div>
         {lastWinner ? (
           <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-            <span className="font-mono text-lg font-bold">{accountLink(lastWinner.winner)}</span>
-            <span className="font-mono text-jackpot text-lg font-extrabold">{formatNear(lastWinner.prize)} NEAR</span>
+            <span className="font-mono text-lg font-bold">
+              {accountLink(lastWinner.winner)}
+              {lastWinner.winner === accountId && <span className="ml-2 text-sm text-acid">(you)</span>}
+            </span>
+            <span className="font-mono text-lg font-extrabold text-jackpot">{formatNear(lastWinner.prize)} NEAR</span>
           </div>
         ) : game?.lastSettledRoundId != null && !capabilities.getRound ? (
-          <p className="mt-2 text-sm text-mute">Round #{game.lastSettledRoundId.toString()} was settled. Its details need <code className="font-mono">get_round</code> (Gate 2).</p>
+          <p className="mt-2 text-sm text-mute">
+            Round #{game.lastSettledRoundId.toString()} was settled. Its details need <code className="font-mono">get_round</code> (Gate 2).
+          </p>
         ) : (
           <p className="mt-2 text-sm text-mute">{deployed ? "No round has been settled yet." : "No live data."}</p>
         )}
@@ -106,7 +154,9 @@ export function RewardsPanel() {
                   <td className="max-w-[10rem] truncate py-2">{accountLink(r.winner)}</td>
                   <td className="py-2 text-right tabular">{formatNear(r.prize)}</td>
                   <td className="py-2 text-right tabular">{r.qualifyingBuyCount}</td>
-                  <td className="py-2 text-right"><Badge tone={CLAIM_TONE[r.claimStatus]}>{r.claimStatus}</Badge></td>
+                  <td className="py-2 text-right">
+                    <Badge tone={CLAIM_TONE[r.claimStatus]}>{r.claimStatus}</Badge>
+                  </td>
                 </tr>
               ))}
             </tbody>

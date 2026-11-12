@@ -46,6 +46,8 @@ export interface SimOptions {
   bots?: boolean;
   durationNs?: bigint;
   now?: () => bigint;
+  /** Simulated wallet + block latency per transaction (ms). */
+  latencyMs?: number;
 }
 
 export class SimulatedChain implements LastReader, LastWriter {
@@ -73,11 +75,13 @@ export class SimulatedChain implements LastReader, LastWriter {
   private connected: string | null = null;
   private listeners = new Set<(id: string | null) => void>();
   private readonly now: () => bigint;
+  private readonly latencyMs: number;
 
   constructor(opts: SimOptions = {}) {
     this.gate2 = opts.gate2 ?? false;
     this.durationNs = opts.durationNs ?? 120n * 1_000_000_000n;
     this.now = opts.now ?? (() => BigInt(Date.now()) * 1_000_000n);
+    this.latencyMs = opts.latencyMs ?? 700;
     if (opts.bots) this.startBots();
   }
 
@@ -172,6 +176,10 @@ export class SimulatedChain implements LastReader, LastWriter {
     return this.near.get(id) ?? 0n;
   }
 
+  async getGasPrice() {
+    return 100_000_000n; // simulated: NEAR's minimum gas price
+  }
+
   async getRound(id: bigint): Promise<RoundView | null> {
     if (!this.gate2) panic("MethodNotFound");
     return this.settled.get(id.toString()) ?? null;
@@ -203,7 +211,7 @@ export class SimulatedChain implements LastReader, LastWriter {
 
   async send(tx: TxRequest): Promise<ExecutionOutcomeLike> {
     const signer = this.connected ?? panic("Not signed in");
-    await new Promise((r) => setTimeout(r, 700)); // simulated wallet + block latency
+    await new Promise((r) => setTimeout(r, this.latencyMs)); // simulated wallet + block latency
     const hash = `SIMULATED-${Math.random().toString(36).slice(2, 10)}`;
     const snapshot = this.snapshot();
     try {

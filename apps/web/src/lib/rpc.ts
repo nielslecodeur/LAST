@@ -23,6 +23,8 @@ export type Finality = "final" | "optimistic";
 
 export interface RpcClient {
   query<T = unknown>(params: Record<string, unknown>): Promise<T>;
+  /** Any other JSON-RPC method (`status`, `gas_price`, …). */
+  call<T = unknown>(method: string, params: unknown): Promise<T>;
 }
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -54,9 +56,8 @@ export function createRpcClient(urls: string[], opts: { fetch?: FetchLike; timeo
     }
   }
 
-  return {
-    async query<T>(params: Record<string, unknown>): Promise<T> {
-      const body = JSON.stringify({ jsonrpc: "2.0", id: String(nextId++), method: "query", params });
+  async function call<T>(method: string, params: unknown): Promise<T> {
+      const body = JSON.stringify({ jsonrpc: "2.0", id: String(nextId++), method, params });
       let lastErr: RpcError | null = null;
       for (let i = 0; i < urls.length; i++) {
         const idx = (preferred + i) % urls.length;
@@ -71,7 +72,11 @@ export function createRpcClient(urls: string[], opts: { fetch?: FetchLike; timeo
         return unwrap<T>(json);
       }
       throw lastErr ?? new RpcError("network", "RPC unreachable");
-    },
+  }
+
+  return {
+    call,
+    query: <T>(params: Record<string, unknown>) => call<T>("query", params),
   };
 }
 
@@ -148,8 +153,20 @@ export async function viewFunction<T = unknown>(
   return (text === "" ? null : JSON.parse(text)) as T;
 }
 
+/** NEAR protocol storage staking price: 10^19 yoctoNEAR per byte (0.00001 NEAR / byte). */
+export const STORAGE_BYTE_COST = 10n ** 19n;
+
+/**
+ * Spendable NEAR of an account: `amount` minus what its own storage locks
+ * (`storage_usage × byte cost`). Showing the raw `amount` would overstate what a buy can use.
+ */
+export function spendableBalance(amount: bigint, storageUsageBytes: bigint): bigint {
+  const locked = storageUsageBytes * STORAGE_BYTE_COST;
+  return amount > locked ? amount - locked : 0n;
+}
+
 export async function viewAccountBalance(rpc: RpcClient, accountId: string): Promise<bigint> {
-  const res = await rpc.query<{ amount: string }>({
+  const res = await rpc.query<{ amount: string; storage_usage: number }>({
     request_type: "view_account",
     finality: "final",
     account_id: accountId,
@@ -157,7 +174,23 @@ export async function viewAccountBalance(rpc: RpcClient, accountId: string): Pro
   if (typeof res.amount !== "string" || !/^\d+$/.test(res.amount)) {
     throw new RpcError("rpc", "view_account: bad amount");
   }
-  return BigInt(res.amount);
+  const usage = Number.isSafeInteger(res.storage_usage) && res.storage_usage >= 0 ? BigInt(res.storage_usage) : 0n;
+  return spendableBalance(BigInt(res.amount), usage);
+}
+
+/** Current network gas price in yoctoNEAR per gas unit (NEAR network fee, not a LAST fee). */
+export async function gasPrice(rpc: RpcClient): Promise<bigint> {
+  const res = await rpc.call<{ gas_price: string }>("gas_price", [null]);
+  if (typeof res.gas_price !== "string" || !/^\d+$/.test(res.gas_price)) {
+    throw new RpcError("rpc", "gas_price: bad value");
+  }
+  return BigInt(res.gas_price);
+}
+
+/** `chain_id` reported by the endpoint ("testnet" / "mainnet"). */
+export async function chainId(rpc: RpcClient): Promise<string> {
+  const res = await rpc.call<{ chain_id: string }>("status", []);
+  return String(res.chain_id);
 }
 
 export async function viewCode(rpc: RpcClient, accountId: string): Promise<Uint8Array> {

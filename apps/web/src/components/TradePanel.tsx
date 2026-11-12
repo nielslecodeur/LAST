@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLast } from "../hooks/useLast";
 import { useQuote } from "../hooks/useQuote";
 import {
@@ -11,11 +11,13 @@ import {
   formatUnits,
   tryParseUnits,
 } from "../lib/amounts";
+import { HIGH_IMPACT_BPS, buyPriceImpactBps, maxGasCost, sellPriceImpactBps } from "../lib/pricing";
 import { DEFAULT_SLIPPAGE_BPS, SLIPPAGE_PRESETS_BPS, applySlippage, parseSlippagePercent } from "../lib/slippage";
-import { buildBuyTx, buildSellTx } from "../lib/transactions";
+import { GAS, buildBuyTx, buildSellTx } from "../lib/transactions";
 import { isBusy } from "../lib/txMachine";
 import type { BuyQuote, SellQuote } from "../lib/types";
 import { BLOCKER_TEXT, checkBuy, checkSell } from "../lib/validation";
+import { PREFILL_BUY_EVENT } from "./Hero";
 import { Button, Card, CrownIcon, Row, cx } from "./ui";
 
 type Side = "buy" | "sell";
@@ -23,15 +25,20 @@ type Side = "buy" | "sell";
 export function TradePanel() {
   const [side, setSide] = useState<Side>("buy");
   const [slippageBps, setSlippageBps] = useState<bigint>(DEFAULT_SLIPPAGE_BPS);
-  const { account, nearBalance, accountId } = useLast();
+  const [prefill, setPrefill] = useState<{ value: string; n: number } | null>(null);
+  const { account, nearBalance, accountId, walletError } = useLast();
+
+  useEffect(() => {
+    const onPrefill = (e: Event) => {
+      setSide("buy");
+      setPrefill((p) => ({ value: String((e as CustomEvent).detail ?? ""), n: (p?.n ?? 0) + 1 }));
+    };
+    window.addEventListener(PREFILL_BUY_EVENT, onPrefill);
+    return () => window.removeEventListener(PREFILL_BUY_EVENT, onPrefill);
+  }, []);
 
   return (
-    <Card
-      id="trade"
-      title="Trade"
-      aside={<SlippageControl value={slippageBps} onChange={setSlippageBps} />}
-      className="h-full"
-    >
+    <Card id="trade" title="Trade" aside={<SlippageControl value={slippageBps} onChange={setSlippageBps} />} className="h-full">
       <div role="tablist" aria-label="Trade side" className="grid grid-cols-2 gap-1 rounded-xl bg-panel-2 p-1">
         {(["buy", "sell"] as const).map((s) => (
           <button
@@ -49,14 +56,18 @@ export function TradePanel() {
         ))}
       </div>
 
-      {accountId && (
+      {walletError && <p className="mt-4 rounded-lg border border-heat/50 bg-heat/10 px-3 py-2 text-sm text-heat">{walletError}</p>}
+
+      {accountId && !walletError && (
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-          <Balance label="NEAR balance" value={nearBalance === null ? null : `${formatNear(nearBalance, 4)}`} />
+          <Balance label="NEAR available" value={nearBalance === null ? null : formatNear(nearBalance, 4)} />
           <Balance label="LAST balance" value={account ? formatLast(account.lastBalance) : null} />
         </div>
       )}
 
-      <div className="mt-4">{side === "buy" ? <BuyForm slippageBps={slippageBps} /> : <SellForm slippageBps={slippageBps} />}</div>
+      <div className="mt-4">
+        {side === "buy" ? <BuyForm slippageBps={slippageBps} prefill={prefill} /> : <SellForm slippageBps={slippageBps} />}
+      </div>
     </Card>
   );
 }
@@ -70,11 +81,31 @@ function Balance({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+/** NEAR network fee, shown apart from the LAST market fee. */
+function GasRow({ gas }: { gas: bigint }) {
+  const { gasPrice } = useLast();
+  return (
+    <Row
+      label="NEAR network gas (max, unused refunded)"
+      value={gasPrice === null ? "—" : `≤ ${formatCompact(maxGasCost(gas, gasPrice), 24, 2)} NEAR`}
+    />
+  );
+}
+
+function ImpactRow({ bps }: { bps: bigint | null }) {
+  if (bps === null) return <Row label="Price impact" value="—" />;
+  const high = bps >= HIGH_IMPACT_BPS;
+  return <Row label="Price impact" value={<span className={high ? "text-heat" : undefined}>{formatBps(bps)}</span>} />;
+}
+
 // ------------------------------------------------------------------ Buy
 
-function BuyForm({ slippageBps }: { slippageBps: bigint }) {
-  const { reader, market, game, account, nearBalance, storage, accountId, deployed, tx, run, connect } = useLast();
+function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { value: string; n: number } | null }) {
+  const { reader, market, game, account, nearBalance, storage, accountId, walletError, deployed, tx, run, connect } = useLast();
   const [input, setInput] = useState("");
+  useEffect(() => {
+    if (prefill) setInput(prefill.value);
+  }, [prefill]);
   const gross = tryParseUnits(input, NEAR_DECIMALS);
   const invalid = input.trim() !== "" && gross === null;
 
@@ -93,21 +124,24 @@ function BuyForm({ slippageBps }: { slippageBps: bigint }) {
     storage,
     minEligibleBuy: market?.minEligibleBuy ?? null,
   });
+  const blocker = walletError ? "Wrong network" : check.blocker ? BLOCKER_TEXT[check.blocker] : null;
   const minOut = quote ? applySlippage(quote.tokensOut, slippageBps) : null;
+  const impact = quote && market ? buyPriceImpactBps(market.nearReserve, market.lastInventory, quote.netNear, quote.tokensOut) : null;
   const presets = useMemo(() => {
     const min = market?.minEligibleBuy;
     return min ? [min, min * 5n, min * 20n] : [];
   }, [market?.minEligibleBuy]);
+  const gas = check.storageDeposit !== null ? GAS.storageDeposit + GAS.buy : GAS.buy;
 
   const submit = async () => {
-    if (!reader || !quote || minOut === null || gross === null || check.blocker) return;
+    if (!reader || !quote || minOut === null || gross === null || blocker) return;
     const ok = await run(
       buildBuyTx({
         contractId: reader.contractId,
         grossYocto: gross,
         minTokensOut: minOut,
         storageDeposit: check.storageDeposit,
-        label: `Buy ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
+        label: `${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
       }),
     );
     if (ok) setInput("");
@@ -115,15 +149,7 @@ function BuyForm({ slippageBps }: { slippageBps: bigint }) {
 
   return (
     <div className="space-y-4">
-      <AmountInput
-        id="buy-amount"
-        label="You pay"
-        unit="NEAR"
-        value={input}
-        onChange={setInput}
-        invalid={invalid}
-        disabled={!deployed}
-      />
+      <AmountInput id="buy-amount" label="You pay" unit="NEAR" value={input} onChange={setInput} invalid={invalid} disabled={!deployed} />
       {presets.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {presets.map((p, i) => (
@@ -140,29 +166,31 @@ function BuyForm({ slippageBps }: { slippageBps: bigint }) {
       )}
 
       <div className="rounded-xl border border-line bg-panel-2/60 p-3">
-        <Row
-          label="You receive (est.)"
-          strong
-          value={quote ? `${formatLast(quote.tokensOut)} LAST` : loading ? "Quoting…" : "—"}
-        />
-        <Row label={`Fee (${market ? formatBps(market.buyFeeBps) : "4%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <Row label="You receive (est.)" strong value={quote ? `${formatLast(quote.tokensOut)} LAST` : loading ? "Quoting…" : "—"} />
+        <Row label={`LAST market fee (${market ? formatBps(market.buyFeeBps) : "4%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <ImpactRow bps={impact} />
         <Row label={`Min received (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatLast(minOut)} LAST` : "—"} />
         {check.storageDeposit !== null && <Row label="Storage registration (once)" value={`${formatNear(check.storageDeposit, 6)} NEAR`} />}
+        <GasRow gas={gas} />
         {quote && (
           <div className={cx("mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold", quote.eligible ? "bg-acid/10 text-acid" : "bg-gold/10 text-gold")}>
             <CrownIcon className="h-4 w-4 shrink-0" />
-            {quote.eligible ? "Takes the crown & resets the timer" : "Below the minimum — no crown, timer unchanged"}
+            {quote.eligible ? "Steals the crown & resets the timer" : "Below the minimum — tokens only, no crown"}
           </div>
         )}
         {error && <p className="mt-2 text-sm text-heat">Quote failed: {error}</p>}
       </div>
 
-      {check.warnings.length > 0 && (
+      {(check.warnings.length > 0 || (impact !== null && impact >= HIGH_IMPACT_BPS)) && (
         <ul className="space-y-1 text-xs text-gold/90">
+          {impact !== null && impact >= HIGH_IMPACT_BPS && <li>• High price impact ({formatBps(impact)}): the testnet pool is thin, a smaller buy gets a better price.</li>}
           {check.warnings.map((w) => (
             <li key={w}>• {w}</li>
           ))}
         </ul>
+      )}
+      {check.blocker === "INSUFFICIENT_NEAR" && (
+        <p className="text-xs text-mute">Need testnet NEAR? Use a NEAR testnet faucet — testnet tokens have no value.</p>
       )}
 
       {!accountId && deployed ? (
@@ -170,8 +198,8 @@ function BuyForm({ slippageBps }: { slippageBps: bigint }) {
           Connect wallet to buy
         </Button>
       ) : (
-        <Button className="w-full py-4 text-base" disabled={check.blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "buy" ? "Confirm in wallet…" : check.blocker ? BLOCKER_TEXT[check.blocker] : quote?.eligible ? "Buy LAST & take the crown" : "Buy LAST"}
+        <Button className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
+          {isBusy(tx) && tx.kind === "buy" ? "Confirm in wallet…" : blocker ?? (quote?.eligible ? "Buy LAST & steal the crown" : "Buy LAST")}
         </Button>
       )}
       <p className="text-[11px] leading-relaxed text-mute">
@@ -184,7 +212,7 @@ function BuyForm({ slippageBps }: { slippageBps: bigint }) {
 // ------------------------------------------------------------------ Sell
 
 function SellForm({ slippageBps }: { slippageBps: bigint }) {
-  const { reader, market, game, account, accountId, deployed, tx, run, connect } = useLast();
+  const { reader, market, game, account, accountId, walletError, deployed, tx, run, connect } = useLast();
   const [input, setInput] = useState("");
   const tokensIn = tryParseUnits(input, LAST_DECIMALS);
   const invalid = input.trim() !== "" && tokensIn === null;
@@ -193,8 +221,10 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
   const marketKey = market ? `${market.nearReserve}:${market.lastInventory}` : "";
   const { quote, loading, error } = useQuote<SellQuote>(deployed && reader ? fetcher : null, tokensIn, marketKey);
 
-  const blocker = checkSell({ deployed, accountId, status: game?.status ?? null, tokensIn, quote, account });
+  const check = checkSell({ deployed, accountId, status: game?.status ?? null, tokensIn, quote, account });
+  const blocker = walletError ? "Wrong network" : check ? BLOCKER_TEXT[check] : null;
   const minOut = quote ? applySlippage(quote.payout, slippageBps) : null;
+  const impact = quote && market && tokensIn ? sellPriceImpactBps(market.nearReserve, market.lastInventory, tokensIn, quote.grossNearOut) : null;
 
   const submit = async () => {
     if (!reader || !quote || minOut === null || tokensIn === null || blocker) return;
@@ -224,14 +254,17 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
 
       <div className="rounded-xl border border-line bg-panel-2/60 p-3">
         <Row label="Gross NEAR out" value={quote ? `${formatNear(quote.grossNearOut, 6)} NEAR` : loading ? "Quoting…" : "—"} />
-        <Row label={`Fee (${market ? formatBps(market.sellFeeBps) : "2%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <Row label={`LAST market fee (${market ? formatBps(market.sellFeeBps) : "2%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <ImpactRow bps={impact} />
         <Row label="NEAR credit (est.)" strong value={quote ? `${formatNear(quote.payout, 6)} NEAR` : "—"} />
         <Row label={`Min credit (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatNear(minOut, 6)} NEAR` : "—"} />
+        <GasRow gas={GAS.sell} />
         {error && <p className="mt-2 text-sm text-heat">Quote failed: {error}</p>}
       </div>
 
       <div className="rounded-lg border border-sky/30 bg-sky/5 px-3 py-2 text-xs leading-relaxed text-sky">
-        Selling never changes the leader or the timer. Proceeds become a <strong>withdrawable NEAR credit</strong> held by the contract — withdrawing it is a separate signed transaction.
+        Selling never changes the leader or the timer. Proceeds become a <strong>withdrawable NEAR credit</strong> held by the contract —
+        withdrawing it is a separate signed transaction.
       </div>
 
       {!accountId && deployed ? (
@@ -240,7 +273,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
         </Button>
       ) : (
         <Button variant="secondary" className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "sell" ? "Confirm in wallet…" : blocker ? BLOCKER_TEXT[blocker] : "Sell LAST"}
+          {isBusy(tx) && tx.kind === "sell" ? "Confirm in wallet…" : blocker ?? "Sell LAST"}
         </Button>
       )}
     </div>
@@ -301,10 +334,7 @@ function SlippageControl({ value, onChange }: { value: bigint; onChange(v: bigin
             setCustom("");
             onChange(p);
           }}
-          className={cx(
-            "rounded-md px-2 py-1 font-mono text-[11px] font-bold",
-            value === p && custom === "" ? "bg-text text-ink" : "text-mute hover:text-text",
-          )}
+          className={cx("rounded-md px-2 py-1 font-mono text-[11px] font-bold", value === p && custom === "" ? "bg-text text-ink" : "text-mute hover:text-text")}
         >
           {formatBps(p)}
         </button>

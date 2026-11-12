@@ -19,10 +19,15 @@ export function App() {
       <TopBar />
       <StatusBanner />
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
-        <p className="max-w-3xl text-lg text-text/85 sm:text-xl">
-          <strong className="text-text">Buy LAST. Take the crown.</strong> Every eligible buy restarts the countdown. If nobody buys
-          before it ends, the last buyer wins the NEAR jackpot — all enforced on-chain.
-        </p>
+        <div className="max-w-3xl">
+          <h2 className="font-mono text-3xl font-extrabold tracking-tight sm:text-4xl">
+            LAST — <span className="text-acid">Steal the Crown</span>
+          </h2>
+          <p className="mt-2 text-base text-text/80 sm:text-lg">
+            Every eligible buy steals the crown and restarts the countdown. If nobody buys before it ends, the last buyer wins the NEAR
+            jackpot — decided by the contract, not by your browser.
+          </p>
+        </div>
         <div className="grid gap-5 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <Hero />

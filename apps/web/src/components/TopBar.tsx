@@ -13,6 +13,8 @@ export function TopBar() {
     </Badge>
   ) : deployment === "checking" ? (
     <Badge tone="mute">CHECKING…</Badge>
+  ) : deployment === "wrong_network" ? (
+    <Badge tone="heat">WRONG NETWORK</Badge>
   ) : deployment === "probe_failed" ? (
     <Badge tone="heat">RPC UNREACHABLE</Badge>
   ) : (

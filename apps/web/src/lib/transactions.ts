@@ -32,6 +32,13 @@ export interface TxRequest {
   actions: FunctionCallAction[];
   /** Human summary for the confirmation toast. */
   label: string;
+  /** Round targeted by settle / claim (used to verify the on-chain effect). */
+  meta?: { roundId?: bigint };
+}
+
+/** Total gas attached to a transaction (upper bound of what it can burn). */
+export function totalGas(tx: TxRequest): bigint {
+  return tx.actions.reduce((sum, a) => sum + BigInt(a.params.gas), 0n);
 }
 
 function call(methodName: string, args: Record<string, unknown>, gas: bigint, deposit: bigint): FunctionCallAction {
@@ -99,6 +106,7 @@ export function buildSettleTx(contractId: string, caps: Capabilities, roundId: b
     receiverId: contractId,
     actions: [call("settle_round", {}, GAS.settle, 0n)],
     label: `Settle round #${roundId}`,
+    meta: { roundId },
   };
 }
 
@@ -110,6 +118,7 @@ export function buildClaimTx(contractId: string, caps: Capabilities, roundId: bi
     receiverId: contractId,
     actions: [call("claim_reward", { round_id: roundId.toString() }, GAS.claim, 0n)],
     label: `Claim round #${roundId} prize`,
+    meta: { roundId },
   };
 }
 
@@ -177,4 +186,28 @@ function summarizeFailure(f: unknown): string {
   const panic = /"(?:ExecutionError|PanicMsg)"\s*:\s*"([^"]+)"/.exec(s);
   if (panic) return panic[1]!;
   return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+}
+
+/**
+ * What a confirmed transaction actually did, from its decoded return value (CONTRACT_API v0.2 §2).
+ * Distinguishes a crown-taking buy from a plain token buy.
+ */
+export function describeResult(kind: TxKind, value: unknown): string | null {
+  const v = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
+  switch (kind) {
+    case "buy":
+      if (v.eligible === true) return "Eligible buy — you took the crown and reset the timer.";
+      if (v.eligible === false) return "Token buy below the minimum — crown and timer unchanged.";
+      return null;
+    case "sell":
+      return "Sold — proceeds added to your withdrawable NEAR credit (not paid out yet).";
+    case "settle":
+      return "Round settled — the prize is reserved for the winner to claim.";
+    case "claim":
+      return "Prize paid to your wallet.";
+    case "withdraw":
+      return "NEAR credit paid to your wallet.";
+    case "register":
+      return "Storage registered.";
+  }
 }

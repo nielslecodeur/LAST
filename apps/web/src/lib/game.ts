@@ -33,16 +33,41 @@ export function canSettle(game: GameState | null, caps: Capabilities): { allowed
   return { allowed: true, reason: null };
 }
 
-/** A prize is claimable when the contract lists it for the account and its status is AVAILABLE. */
+export interface ClaimableItem {
+  roundId: bigint;
+  /** Details from `get_round`, or null when that view is not available (yet). */
+  round: RoundView | null;
+}
+
+/**
+ * Prizes the contract lists for the account (`claimable_rounds`), enriched with `get_round` when
+ * available. An empty list is the normal state. PAID rounds are dropped; a round whose details
+ * name another winner is dropped (defensive — the contract is the authority).
+ */
 export function claimableFor(
   account: AccountState | null,
   rounds: Map<string, RoundView | null>,
   accountId: string | null,
-): RoundView[] {
+): ClaimableItem[] {
   if (!account || !accountId) return [];
   return account.claimableRounds
-    .map((id) => rounds.get(id.toString()) ?? null)
-    .filter((r): r is RoundView => r !== null && r.winner === accountId && r.claimStatus !== "PAID");
+    .map((id) => ({ roundId: id, round: rounds.get(id.toString()) ?? null }))
+    .filter(({ round }) => round === null || (round.winner === accountId && round.claimStatus !== "PAID"));
+}
+
+/** Rounds the account won and already got paid (for the "claim again" demo check). */
+export function paidWinsOf(rounds: Map<string, RoundView | null>, accountId: string | null): RoundView[] {
+  if (!accountId) return [];
+  return [...rounds.values()].filter((r): r is RoundView => r !== null && r.winner === accountId && r.claimStatus === "PAID");
+}
+
+/**
+ * A round was just settled between two confirmed reads (victory moment). Returns the settled id.
+ */
+export function detectSettlement(prev: GameState | null, next: GameState): bigint | null {
+  if (!prev || next.lastSettledRoundId === null) return null;
+  if (prev.lastSettledRoundId === null || next.lastSettledRoundId > prev.lastSettledRoundId) return next.lastSettledRoundId;
+  return null;
 }
 
 /** Ids of the most recent settled rounds, newest first. */

@@ -5,19 +5,24 @@
  * Rules enforced here:
  *  - On an RPC error we keep the last *real* values, flag them as stale and show the error.
  *    We never fall back to simulated data.
- *  - After a transaction we re-read the views before declaring it confirmed.
+ *  - Responses are applied in request order: a slow old poll can never overwrite a newer read.
+ *  - After a transaction we re-read the views until they show its effect before declaring it
+ *    confirmed; payouts still IN_FLIGHT end as "unresolved", never as a success.
+ *  - A wallet account that is not a testnet account cannot transact.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { type AppConfig } from "../config";
-import type { ChainClock } from "../lib/countdown";
+import { type AppConfig, walletNetworkProblem } from "../config";
+import { type ChainClock, mergeClock, sampleClock } from "../lib/countdown";
 import { classifyError } from "../lib/errors";
 import { recentRoundIds } from "../lib/game";
+import { type PendingTxMarker, clearPending, markPending, takeInterrupted } from "../lib/pendingTx";
 import type { LastReader } from "../lib/reader";
 import { LiveLastReader } from "../lib/reader";
-import { type TxRequest, interpretOutcome } from "../lib/transactions";
+import { type TxRequest, describeResult, interpretOutcome } from "../lib/transactions";
 import { IDLE_TX, type TxState, isBusy, txReducer } from "../lib/txMachine";
+import { type ChainSnapshot, VERIFY_ATTEMPTS, VERIFY_INTERVAL_MS, verifyOnChain } from "../lib/txVerify";
 import {
   type AccountState,
   type Capabilities,
@@ -37,6 +42,7 @@ export type Deployment =
   | "deployed"
   | "no_account" // id configured but account missing → CONTRACT NOT DEPLOYED
   | "no_code" // account exists, no contract code → CONTRACT NOT DEPLOYED
+  | "wrong_network" // RPC endpoint is not testnet → refused
   | "probe_failed"; // RPC down while probing
 
 export interface SessionTx {
@@ -46,6 +52,7 @@ export interface SessionTx {
   phase: TxState["phase"];
   hash: string | null;
   error: string | null;
+  note: string | null;
   at: number;
 }
 
@@ -56,6 +63,7 @@ export interface LastData {
   nearBalance: bigint | null;
   storage: StorageBounds | null;
   integrity: Integrity | null;
+  gasPrice: bigint | null;
   rounds: Map<string, RoundView | null>;
   clock: ChainClock | null;
 }
@@ -70,6 +78,8 @@ export interface LastContextValue extends LastData {
   rpcError: string | null;
   lastUpdatedMs: number | null;
   accountId: string | null;
+  /** Non-null when the connected wallet account is not usable on testnet. */
+  walletError: string | null;
   connecting: boolean;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -77,7 +87,10 @@ export interface LastContextValue extends LastData {
   run(tx: TxRequest): Promise<boolean>;
   resetTx(): void;
   sessionTxs: SessionTx[];
-  refresh(): Promise<void>;
+  /** A transaction was waiting for the wallet when the page was last reloaded/closed. */
+  interrupted: PendingTxMarker | null;
+  dismissInterrupted(): void;
+  refresh(): Promise<ChainSnapshot | null>;
 }
 
 const Ctx = createContext<LastContextValue | null>(null);
@@ -95,11 +108,16 @@ const EMPTY: LastData = {
   nearBalance: null,
   storage: null,
   integrity: null,
+  gasPrice: null,
   rounds: new Map(),
   clock: null,
 };
 
 const POLL_MS = 3_000;
+/** Heavier, slow-moving views are refreshed every N polls (keeps the public RPC load low). */
+const SLOW_EVERY = 5;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function LastProvider(props: {
   config: AppConfig;
@@ -107,9 +125,11 @@ export function LastProvider(props: {
   writer: LastWriter | null;
   children: ReactNode;
   pollMs?: number;
+  verifyIntervalMs?: number;
 }) {
   const { config, reader, writer } = props;
   const pollMs = props.pollMs ?? POLL_MS;
+  const verifyIntervalMs = props.verifyIntervalMs ?? VERIFY_INTERVAL_MS;
   const [deployment, setDeployment] = useState<Deployment>(() =>
     config.source === "config_error" ? "config_error" : reader ? "checking" : "not_configured",
   );
@@ -121,11 +141,23 @@ export function LastProvider(props: {
   const [connecting, setConnecting] = useState(false);
   const [tx, dispatch] = useReducer(txReducer, IDLE_TX);
   const [sessionTxs, setSessionTxs] = useState<SessionTx[]>([]);
+  const [interrupted, setInterrupted] = useState<PendingTxMarker | null>(() => takeInterrupted());
   const txSeq = useRef(0);
   const accountRef = useRef<string | null>(null);
   accountRef.current = accountId;
+  const dataRef = useRef<LastData>(EMPTY);
+  dataRef.current = data;
+
+  // Request ordering + caches that do not need React state.
+  const reqSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const pollCount = useRef(0);
+  const paidRounds = useRef(new Map<string, RoundView>()); // PAID rounds never change again
 
   const deployed = deployment === "deployed";
+  // Simulated accounts (`*.simulated`) are local fakes: the testnet account guard applies to live mode.
+  const liveWallet = reader?.kind !== "simulated";
+  const walletError = accountId && liveWallet ? walletNetworkProblem(accountId) : null;
 
   // ---- deployment probe (also yields Gate 2 capabilities from the deployed WASM) ----
   useEffect(() => {
@@ -140,6 +172,7 @@ export function LastProvider(props: {
             setCapabilities(st.capabilities);
             setDeployment("deployed");
           } else {
+            if (st.state === "wrong_network") setRpcError(`RPC endpoint reports chain "${st.chainId}", not testnet.`);
             setDeployment(st.state);
           }
         } else {
@@ -160,35 +193,65 @@ export function LastProvider(props: {
   }, [reader]);
 
   // ---- views ----
-  const refresh = useCallback(async () => {
-    if (!reader || deployment !== "deployed") return;
+  const refresh = useCallback(async (): Promise<ChainSnapshot | null> => {
+    if (!reader || deployment !== "deployed") return null;
+    const seq = ++reqSeq.current;
     const who = accountRef.current;
+    const prev = dataRef.current;
+    const slow = pollCount.current++ % SLOW_EVERY === 0 || prev.integrity === null;
     try {
-      const [game, market, integrity, storage] = await Promise.all([
-        reader.getGameState(),
+      const sentAt = Date.now();
+      const game = await reader.getGameState();
+      const receivedAt = Date.now();
+      const [market, account, nearBalance, integrity, storage, gasPrice] = await Promise.all([
         reader.getMarketState(),
-        reader.getIntegrity(),
-        reader.getStorageBounds(),
+        who ? reader.getAccountState(who) : Promise.resolve(null),
+        who ? reader.getNearBalance(who) : Promise.resolve(null),
+        slow ? reader.getIntegrity() : Promise.resolve(prev.integrity),
+        prev.storage ? Promise.resolve(prev.storage) : reader.getStorageBounds(), // fixed at deploy
+        slow || prev.gasPrice === null ? reader.getGasPrice().catch(() => prev.gasPrice) : Promise.resolve(prev.gasPrice),
       ]);
-      const localAtMs = Date.now();
-      const [account, nearBalance] = who
-        ? await Promise.all([reader.getAccountState(who), reader.getNearBalance(who)])
-        : [null, null];
 
       let rounds = new Map<string, RoundView | null>();
       if (capabilities.getRound) {
         const ids = new Set(recentRoundIds(game.lastSettledRoundId).map(String));
         account?.claimableRounds.forEach((r) => ids.add(r.toString()));
-        const fetched = await Promise.all([...ids].map(async (id) => [id, await reader.getRound(BigInt(id))] as const));
+        const fetched = await Promise.all(
+          [...ids].map(async (id) => {
+            const cached = paidRounds.current.get(id);
+            if (cached) return [id, cached] as const;
+            const r = await reader.getRound(BigInt(id));
+            if (r?.claimStatus === "PAID") paidRounds.current.set(id, r);
+            return [id, r] as const;
+          }),
+        );
         rounds = new Map(fetched);
       }
 
-      setData({ game, market, integrity, storage, account, nearBalance, rounds, clock: { chainNowNs: game.nowNs, localAtMs } });
+      // A newer request already landed: drop this stale response.
+      if (seq < appliedSeq.current) return null;
+      appliedSeq.current = seq;
+
+      const snapshot: LastData = {
+        game,
+        market,
+        integrity,
+        storage,
+        gasPrice,
+        account: who === accountRef.current ? account : null,
+        nearBalance: who === accountRef.current ? nearBalance : null,
+        rounds,
+        clock: mergeClock(prev.clock, sampleClock(game.nowNs, sentAt, receivedAt)),
+      };
+      dataRef.current = snapshot;
+      setData(snapshot);
       setRpcError(null);
-      setLastUpdatedMs(localAtMs);
+      setLastUpdatedMs(receivedAt);
+      return snapshot;
     } catch (e) {
       // Keep the last real values (shown as stale) — never substitute simulated data.
-      setRpcError(classifyError(e).message);
+      if (seq >= appliedSeq.current) setRpcError(classifyError(e).message);
+      return null;
     }
   }, [reader, deployment, capabilities.getRound]);
 
@@ -198,11 +261,24 @@ export function LastProvider(props: {
     const t = setInterval(() => {
       if (typeof document === "undefined" || document.visibilityState !== "hidden") void refresh();
     }, pollMs);
-    return () => clearInterval(t);
+    // Resync immediately after sleep / tab switch / network recovery instead of waiting a tick.
+    const wake = () => {
+      if (document.visibilityState !== "hidden") void refresh();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("focus", wake);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", wake);
+    };
   }, [deployment, refresh, pollMs]);
 
-  // Account switch → immediate re-read.
+  // Account switch → drop the previous account's data, then re-read.
   useEffect(() => {
+    setData((d) => ({ ...d, account: null, nearBalance: null }));
     if (deployed) void refresh();
   }, [accountId, deployed, refresh]);
 
@@ -244,21 +320,24 @@ export function LastProvider(props: {
   const run = useCallback(
     async (req: TxRequest): Promise<boolean> => {
       if (!writer || !deployed || isBusy(txRef.current)) return false;
+      if (liveWallet && accountRef.current && walletNetworkProblem(accountRef.current)) return false;
       const id = ++txSeq.current;
       const log = (patch: Partial<SessionTx>) =>
         setSessionTxs((list) => {
-          const existing = list.find((t) => t.id === id);
-          if (!existing) {
-            const entry: SessionTx = { id, kind: req.kind, label: req.label, phase: "signing", hash: null, error: null, at: Date.now(), ...patch };
+          if (!list.some((t) => t.id === id)) {
+            const entry: SessionTx = { id, kind: req.kind, label: req.label, phase: "signing", hash: null, error: null, note: null, at: Date.now(), ...patch };
             return [entry, ...list].slice(0, 20);
           }
           return list.map((t) => (t.id === id ? { ...t, ...patch } : t));
         });
 
+      const before: ChainSnapshot = dataRef.current;
       dispatch({ type: "SIGN", kind: req.kind, label: req.label });
       log({});
+      markPending({ label: req.label, accountId: accountRef.current, at: Date.now() });
       try {
         const outcome = await writer.send(req);
+        clearPending();
         const res = interpretOutcome(outcome, req.kind);
         if (!res.ok) {
           const error = classifyError(res.code ?? res.message);
@@ -269,21 +348,39 @@ export function LastProvider(props: {
         }
         dispatch({ type: "OUTCOME_OK", hash: res.hash });
         log({ phase: "pending", hash: res.hash });
-        await refresh();
-        dispatch({ type: "RECONCILED" });
-        log({ phase: "confirmed" });
-        return true;
+
+        // Confirmed only when fresh contract state shows the effect.
+        let verdict: ReturnType<typeof verifyOnChain> = { status: "wait", note: "Not verified yet." };
+        for (let i = 0; i < VERIFY_ATTEMPTS; i++) {
+          const fresh = await refresh();
+          if (fresh) {
+            verdict = verifyOnChain(req.kind, req.meta ?? {}, before, fresh);
+            if (verdict.status === "confirmed") break;
+          }
+          if (i < VERIFY_ATTEMPTS - 1) await sleep(verifyIntervalMs);
+        }
+        if (verdict.status === "confirmed") {
+          const note = describeResult(req.kind, res.value);
+          dispatch({ type: "RECONCILED", note });
+          log({ phase: "confirmed", note });
+          return true;
+        }
+        dispatch({ type: "UNRESOLVED", note: verdict.note });
+        log({ phase: "unresolved", note: verdict.note });
+        return false;
       } catch (e) {
+        clearPending();
         const error = classifyError(e);
         dispatch({ type: "THROWN", error });
         log({ phase: error.kind === "rejected" ? "rejected" : "failed", error: error.message });
         return false;
       }
     },
-    [writer, deployed, refresh],
+    [writer, deployed, refresh, verifyIntervalMs, liveWallet],
   );
 
   const resetTx = useCallback(() => dispatch({ type: "RESET" }), []);
+  const dismissInterrupted = useCallback(() => setInterrupted(null), []);
 
   const value = useMemo<LastContextValue>(
     () => ({
@@ -297,6 +394,7 @@ export function LastProvider(props: {
       rpcError,
       lastUpdatedMs,
       accountId,
+      walletError,
       connecting,
       connect,
       disconnect,
@@ -304,9 +402,11 @@ export function LastProvider(props: {
       run,
       resetTx,
       sessionTxs,
+      interrupted,
+      dismissInterrupted,
       refresh,
     }),
-    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, refresh],
+    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, walletError, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, interrupted, dismissInterrupted, refresh],
   );
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
