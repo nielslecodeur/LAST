@@ -1,13 +1,14 @@
 # LAST — Contract API
 
-**Status:** DRAFT v0.2. Interface agreed between Developer A (contract) and Developer B (web) before implementation. **Nothing here is deployed yet.** Changes go through both developers and bump the version below.
+**Status:** DRAFT v0.3. Interface agreed between Developer A (contract) and Developer B (web) before implementation. **Nothing here is deployed yet.** Changes go through both developers and bump the version below.
 
-Implemented on `feat/contracts` (Gate 1, unit-tested, not deployed): `new`, `buy`, `sell`, `quote_buy`, `quote_sell`, `get_game_state`, `get_market_state`, `get_account_state` (without `claimable_rounds`), `get_roles`, `get_integrity`, all NEP-141/145/148 methods. Pending (Gate 2): `withdraw_near_credit`, `settle_round`, `claim_reward`, `get_round`.
+Every method below is implemented on `feat/contracts` (Gates 1–2), covered by unit tests and a `near-workspaces` sandbox scenario. Not deployed to testnet yet.
 
 | Version | Date | Change |
 |---|---|---|
 | 0.1 | 2026-11-12 | First draft from `docs/SPEC_V2.md` |
 | 0.2 | 2026-11-12 | Gate 1: added `buy_count`/`sell_count` to market state, `get_roles`, `get_integrity`; new error codes `ERR_ZERO_AMOUNT`, `ERR_USE_SELL`, `ERR_POSITIVE_BALANCE`, `ERR_FORBIDDEN`, `ERR_INSOLVENT`, `ERR_OVERFLOW` |
+| 0.3 | 2026-11-12 | Gate 2: settle/claim/withdraw implemented; `get_integrity` gains `in_flight` |
 
 ## 0. Conventions
 
@@ -196,11 +197,12 @@ Real contract balance vs every named obligation (SPEC §1.6), for the demo recon
   "ops_reserve": "...",
   "credits_outstanding": "...",
   "prizes_outstanding": "...",
+  "in_flight": "...",
   "surplus": "..."
 }
 ```
 
-`surplus = account_balance - storage_cost - total_obligations`. Every change method checks `account_balance >= storage_cost + total_obligations` and panics with `ERR_INSOLVENT` otherwise.
+`in_flight` is NEAR already sent by a transfer promise whose callback has not run yet (it left the balance but is still owed, or comes back on failure). `surplus = account_balance + in_flight - storage_cost - total_obligations`. Every change method checks `account_balance + in_flight >= storage_cost + total_obligations` and panics with `ERR_INSOLVENT` otherwise.
 
 ## 4. NEP-141 / NEP-145 / NEP-148 (standard)
 

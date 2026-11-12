@@ -34,7 +34,15 @@ On Windows, near-sdk's `unit-testing` feature needs NASM + CMake; run tests from
 wsl -d Ubuntu-24.04 -- bash -lc 'source ~/.cargo/env; cd "$(wslpath "<repo path>")" && CARGO_TARGET_DIR=~/last-target cargo test --manifest-path contracts/last/Cargo.toml'
 ```
 
-Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`. Sandbox tests (`near-workspaces`) also run in Linux/WSL.
+Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`.
+
+Sandbox tests (`near-workspaces`, Linux/WSL only) take the built WASM:
+
+```bash
+LAST_WASM=~/last-target/near/last.wasm CARGO_TARGET_DIR=~/last-it-target cargo test --manifest-path tests/integration/Cargo.toml -- --nocapture
+```
+
+`#[private]` is enforced only in the WASM entry point: test "callback only from self" in the sandbox, not in unit tests.
 
 ## Out of scope for V2
 
