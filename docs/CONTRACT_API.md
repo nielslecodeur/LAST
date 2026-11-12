@@ -12,7 +12,7 @@ Every method below is implemented on `feat/contracts` (Gates 1–2), covered by 
 
 ## 0. Conventions
 
-- **Network:** NEAR Testnet only. Contract account: `TBD.testnet` (filled in at Gate 3).
+- **Network:** NEAR Testnet only. Contract account: **`last-armand.testnet`** (deployed 2026-11-12, see `docs/DEPLOYMENT.md`).
 - **Amounts** (`U128`) are JSON **decimal strings**: yoctoNEAR (`1 NEAR = 10^24`) or atomic LAST (`1 LAST = 10^18`). Frontend parses with `BigInt`, never `Number`.
 - **Timestamps** (`U64`) are JSON decimal strings in **nanoseconds** (`env::block_timestamp()`).
 - **Round ids** (`U64`) start at `1`. `round_id` in game state is the current round when ACTIVE/EXPIRED, or the id the next round will take when IDLE.
