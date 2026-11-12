@@ -77,7 +77,8 @@ export function classifyError(err: unknown): UiError {
         message: "The configured contract does not expose this LAST method (wrong VITE_LAST_CONTRACT_ID, or an older contract version).",
       };
     }
-    return { kind: "rpc", code: null, message: `NEAR RPC error: ${err.message}` };
+    const hint = /Failed to fetch/i.test(err.message) ? " (network down, or the endpoint is rate-limiting: its 429 replies carry no CORS header)" : "";
+    return { kind: "rpc", code: null, message: `NEAR RPC error: ${err.message}${hint}` };
   }
   return { kind: "unknown", code: null, message: err instanceof Error ? err.message : text || "Unknown error" };
 }

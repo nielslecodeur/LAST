@@ -58,25 +58,26 @@ export function createRpcClient(urls: string[], opts: { fetch?: FetchLike; timeo
 
   async function call<T>(method: string, params: unknown): Promise<T> {
       const body = JSON.stringify({ jsonrpc: "2.0", id: String(nextId++), method, params });
-      let lastErr: RpcError | null = null;
+      const failures: string[] = [];
       for (let i = 0; i < urls.length; i++) {
         const idx = (preferred + i) % urls.length;
         let json: unknown;
         try {
           json = await post(urls[idx]!, body);
         } catch (e) {
-          lastErr = e as RpcError;
+          failures.push((e as Error).message);
           continue; // transport failure → next endpoint
         }
         if (isRateLimited(json)) {
           // Rate limit / deprecated endpoint: a transport problem, not an answer → next endpoint.
-          lastErr = new RpcError("network", `Rate-limited by ${new URL(urls[idx]!).host}`);
+          failures.push(`Rate-limited by ${new URL(urls[idx]!).host}`);
           continue;
         }
         preferred = idx;
         return unwrap<T>(json);
       }
-      throw lastErr ?? new RpcError("network", "RPC unreachable");
+      // Report every endpoint, not just the last one tried.
+      throw new RpcError("network", failures.length > 1 ? `All RPC endpoints failed — ${failures.join("; ")}` : (failures[0] ?? "RPC unreachable"));
   }
 
   return {

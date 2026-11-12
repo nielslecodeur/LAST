@@ -62,7 +62,11 @@ function SourceBanner() {
     );
   }
   if (deployment === "probe_failed") {
-    return <Banner tone="heat" title="Cannot reach NEAR Testnet RPC">{rpcError ?? "Unknown error"} — retrying is safe; nothing is shown until the contract answers.</Banner>;
+    return (
+      <Banner tone="heat" title="Cannot reach NEAR Testnet RPC">
+        {rpcError ?? "Unknown error"} — retrying automatically; nothing is shown until the contract answers.
+      </Banner>
+    );
   }
   if (rpcError) {
     const age = lastUpdatedMs ? Math.round((Date.now() - lastUpdatedMs) / 1000) : null;

@@ -90,7 +90,7 @@ export interface LastContextValue extends LastData {
   /** A transaction was waiting for the wallet when the page was last reloaded/closed. */
   interrupted: PendingTxMarker | null;
   dismissInterrupted(): void;
-  refresh(): Promise<ChainSnapshot | null>;
+  refresh(opts?: { light?: boolean }): Promise<ChainSnapshot | null>;
 }
 
 const Ctx = createContext<LastContextValue | null>(null);
@@ -114,8 +114,12 @@ const EMPTY: LastData = {
 };
 
 const POLL_MS = 3_000;
-/** Heavier, slow-moving views are refreshed every N polls (keeps the public RPC load low). */
+/** Market/account views every N light polls (or as soon as the game moves). */
+const MAIN_EVERY = 2;
+/** Heavier, slow-moving views (integrity, gas price) every N polls. */
 const SLOW_EVERY = 5;
+/** Poll back-off ceiling while the RPC keeps failing. */
+const MAX_BACKOFF_MS = 30_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -152,6 +156,7 @@ export function LastProvider(props: {
   const reqSeq = useRef(0);
   const appliedSeq = useRef(0);
   const pollCount = useRef(0);
+  const failures = useRef(0);
   const paidRounds = useRef(new Map<string, RoundView>()); // PAID rounds never change again
 
   const deployed = deployment === "deployed";
@@ -160,6 +165,14 @@ export function LastProvider(props: {
   const walletError = accountId && liveWallet ? walletNetworkProblem(accountId) : null;
 
   // ---- deployment probe (also yields Gate 2 capabilities from the deployed WASM) ----
+  // A failed probe (RPC down / rate-limited) is retried with backoff: 2 s, 4 s, 8 s … max 30 s.
+  const [probeAttempt, setProbeAttempt] = useState(0);
+  useEffect(() => {
+    if (deployment !== "probe_failed") return;
+    const t = setTimeout(() => setProbeAttempt((a) => a + 1), Math.min(30_000, 2_000 * 2 ** Math.min(probeAttempt, 4)));
+    return () => clearTimeout(t);
+  }, [deployment, probeAttempt]);
+
   useEffect(() => {
     if (!reader) return;
     let cancelled = false;
@@ -170,6 +183,7 @@ export function LastProvider(props: {
           if (cancelled) return;
           if (st.state === "deployed") {
             setCapabilities(st.capabilities);
+            setRpcError(null);
             setDeployment("deployed");
           } else {
             if (st.state === "wrong_network") setRpcError(`RPC endpoint reports chain "${st.chainId}", not testnet.`);
@@ -190,77 +204,112 @@ export function LastProvider(props: {
     return () => {
       cancelled = true;
     };
-  }, [reader]);
+  }, [reader, probeAttempt]);
 
   // ---- views ----
-  const refresh = useCallback(async (): Promise<ChainSnapshot | null> => {
-    if (!reader || deployment !== "deployed") return null;
-    const seq = ++reqSeq.current;
-    const who = accountRef.current;
-    const prev = dataRef.current;
-    const slow = pollCount.current++ % SLOW_EVERY === 0 || prev.integrity === null;
-    try {
-      const sentAt = Date.now();
-      const game = await reader.getGameState();
-      const receivedAt = Date.now();
-      const [market, account, nearBalance, integrity, storage, gasPrice] = await Promise.all([
-        reader.getMarketState(),
-        who ? reader.getAccountState(who) : Promise.resolve(null),
-        who ? reader.getNearBalance(who) : Promise.resolve(null),
-        slow ? reader.getIntegrity() : Promise.resolve(prev.integrity),
-        prev.storage ? Promise.resolve(prev.storage) : reader.getStorageBounds(), // fixed at deploy
-        slow || prev.gasPrice === null ? reader.getGasPrice().catch(() => prev.gasPrice) : Promise.resolve(prev.gasPrice),
-      ]);
+  /**
+   * Reads contract state. Public RPCs rate-limit hard (FastNEAR answers 429 *without* CORS headers,
+   * which the browser reports as "Failed to fetch"), so a light poll reads only `get_game_state`
+   * every tick and the rest on a slower cadence or when the game changed. `full` (default) reads
+   * everything: after a transaction, on focus/online, on account switch.
+   */
+  const refresh = useCallback(
+    async (opts: { light?: boolean } = {}): Promise<ChainSnapshot | null> => {
+      if (!reader || deployment !== "deployed") return null;
+      const seq = ++reqSeq.current;
+      const who = accountRef.current;
+      const prev = dataRef.current;
+      const n = pollCount.current++;
+      const light = opts.light === true && prev.game !== null && prev.market !== null;
+      try {
+        const sentAt = Date.now();
+        const game = await reader.getGameState();
+        const receivedAt = Date.now();
+        // Anything that moves the game (buy, settle, new round) also moves market/account data.
+        const gameMoved =
+          prev.game === null ||
+          prev.game.deadlineNs !== game.deadlineNs ||
+          prev.game.activePot !== game.activePot ||
+          prev.game.nextSeedPot !== game.nextSeedPot ||
+          prev.game.roundId !== game.roundId ||
+          prev.game.status !== game.status;
+        const needMain = !light || gameMoved || n % MAIN_EVERY === 0 || (who !== null && prev.account === null);
+        const slow = n % SLOW_EVERY === 0 || prev.integrity === null;
+        const [market, account, nearBalance, integrity, storage, gasPrice] = await Promise.all([
+          needMain ? reader.getMarketState() : Promise.resolve(prev.market),
+          who && needMain ? reader.getAccountState(who) : Promise.resolve(who ? prev.account : null),
+          who && needMain ? reader.getNearBalance(who) : Promise.resolve(who ? prev.nearBalance : null),
+          slow ? reader.getIntegrity() : Promise.resolve(prev.integrity),
+          prev.storage ? Promise.resolve(prev.storage) : reader.getStorageBounds(), // fixed at deploy
+          slow || prev.gasPrice === null ? reader.getGasPrice().catch(() => prev.gasPrice) : Promise.resolve(prev.gasPrice),
+        ]);
 
-      let rounds = new Map<string, RoundView | null>();
-      if (capabilities.getRound) {
-        const ids = new Set(recentRoundIds(game.lastSettledRoundId).map(String));
-        account?.claimableRounds.forEach((r) => ids.add(r.toString()));
-        const fetched = await Promise.all(
-          [...ids].map(async (id) => {
-            const cached = paidRounds.current.get(id);
-            if (cached) return [id, cached] as const;
-            const r = await reader.getRound(BigInt(id));
-            if (r?.claimStatus === "PAID") paidRounds.current.set(id, r);
-            return [id, r] as const;
-          }),
-        );
-        rounds = new Map(fetched);
+        let rounds = prev.rounds;
+        const claimKey = account?.claimableRounds.join(",") ?? "";
+        const prevClaimKey = prev.account?.claimableRounds.join(",") ?? "";
+        const roundsMayChange = !light || game.lastSettledRoundId !== prev.game?.lastSettledRoundId || claimKey !== prevClaimKey;
+        if (capabilities.getRound && roundsMayChange) {
+          const ids = new Set(recentRoundIds(game.lastSettledRoundId).map(String));
+          account?.claimableRounds.forEach((r) => ids.add(r.toString()));
+          const fetched = await Promise.all(
+            [...ids].map(async (id) => {
+              const cached = paidRounds.current.get(id);
+              if (cached) return [id, cached] as const;
+              const r = await reader.getRound(BigInt(id));
+              if (r?.claimStatus === "PAID") paidRounds.current.set(id, r);
+              return [id, r] as const;
+            }),
+          );
+          rounds = new Map(fetched);
+        }
+
+        // A newer request already landed: drop this stale response.
+        if (seq < appliedSeq.current) return null;
+        appliedSeq.current = seq;
+        failures.current = 0;
+
+        const snapshot: LastData = {
+          game,
+          market,
+          integrity,
+          storage,
+          gasPrice,
+          account: who === accountRef.current ? account : null,
+          nearBalance: who === accountRef.current ? nearBalance : null,
+          rounds,
+          clock: mergeClock(prev.clock, sampleClock(game.nowNs, sentAt, receivedAt)),
+        };
+        dataRef.current = snapshot;
+        setData(snapshot);
+        setRpcError(null);
+        setLastUpdatedMs(receivedAt);
+        return snapshot;
+      } catch (e) {
+        failures.current++;
+        // Keep the last real values (shown as stale) — never substitute simulated data.
+        if (seq >= appliedSeq.current) setRpcError(classifyError(e).message);
+        return null;
       }
-
-      // A newer request already landed: drop this stale response.
-      if (seq < appliedSeq.current) return null;
-      appliedSeq.current = seq;
-
-      const snapshot: LastData = {
-        game,
-        market,
-        integrity,
-        storage,
-        gasPrice,
-        account: who === accountRef.current ? account : null,
-        nearBalance: who === accountRef.current ? nearBalance : null,
-        rounds,
-        clock: mergeClock(prev.clock, sampleClock(game.nowNs, sentAt, receivedAt)),
-      };
-      dataRef.current = snapshot;
-      setData(snapshot);
-      setRpcError(null);
-      setLastUpdatedMs(receivedAt);
-      return snapshot;
-    } catch (e) {
-      // Keep the last real values (shown as stale) — never substitute simulated data.
-      if (seq >= appliedSeq.current) setRpcError(classifyError(e).message);
-      return null;
-    }
-  }, [reader, deployment, capabilities.getRound]);
+    },
+    [reader, deployment, capabilities.getRound],
+  );
 
   useEffect(() => {
     if (deployment !== "deployed") return;
-    void refresh();
-    const t = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState !== "hidden") void refresh();
-    }, pollMs);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // setTimeout loop (not setInterval): after failures the next poll is delayed (×2 each, max 30 s)
+    // so a rate-limited endpoint is not hammered; back to normal after one success.
+    const loop = async () => {
+      if (stopped) return;
+      if (typeof document === "undefined" || document.visibilityState !== "hidden") await refresh({ light: true });
+      if (stopped) return;
+      const backoff = Math.min(MAX_BACKOFF_MS, pollMs * 2 ** Math.min(failures.current, 4));
+      timer = setTimeout(loop, failures.current > 0 ? backoff : pollMs);
+    };
+    void refresh().then(() => {
+      if (!stopped) timer = setTimeout(loop, pollMs);
+    });
     // Resync immediately after sleep / tab switch / network recovery instead of waiting a tick.
     const wake = () => {
       if (document.visibilityState !== "hidden") void refresh();
@@ -269,15 +318,23 @@ export function LastProvider(props: {
     window.addEventListener("online", wake);
     window.addEventListener("focus", wake);
     return () => {
-      clearInterval(t);
+      stopped = true;
+      clearTimeout(timer);
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("online", wake);
       window.removeEventListener("focus", wake);
     };
   }, [deployment, refresh, pollMs]);
 
-  // Account switch → drop the previous account's data, then re-read.
+  // Account switch → drop the previous account's data, then re-read. Only on a real change: the
+  // first read after deployment is done by the polling effect (no duplicate burst at load).
+  const lastAccount = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (lastAccount.current === undefined || lastAccount.current === accountId) {
+      lastAccount.current = accountId;
+      return;
+    }
+    lastAccount.current = accountId;
     setData((d) => ({ ...d, account: null, nearBalance: null }));
     if (deployed) void refresh();
   }, [accountId, deployed, refresh]);

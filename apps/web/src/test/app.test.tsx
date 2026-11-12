@@ -1,6 +1,6 @@
 // UI tests (jsdom). MOCKED: no network, no wallet. "Not deployed" uses no reader at all; the other
 // cases use the SIMULATED adapter. They check what the user sees in each state.
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { type AppConfig, resolveConfig } from "../config";
@@ -102,5 +102,79 @@ describe("while the contract is being probed", () => {
     expect(screen.queryByText(/CONTRACT NOT DEPLOYED/)).toBeNull();
     expect(screen.getAllByText(/Connecting to contract/).length).toBeGreaterThan(0);
     expect(screen.getByText("CHECKING…")).toBeTruthy();
+  });
+});
+
+describe("RPC outage at load (reported during Gate 4)", () => {
+  it("retries a failed deployment probe automatically and recovers", async () => {
+    const sim = new SimulatedChain();
+    let calls = 0;
+    const reader = Object.assign(Object.create(sim), {
+      kind: "live",
+      getCapabilities: async () => {
+        calls++;
+        if (calls === 1) throw Object.assign(new Error("All RPC endpoints failed — Failed to fetch"), { name: "RpcError" });
+        return sim.getCapabilities();
+      },
+    }) as LastReader;
+    mount(resolveConfig({ VITE_LAST_CONTRACT_ID: "last.testnet" }), reader);
+    await flush();
+    expect(screen.getByText(/Cannot reach NEAR Testnet RPC/)).toBeTruthy();
+    expect(screen.getByText(/retrying automatically/)).toBeTruthy();
+    // first retry after 2 s → deployed, banner gone
+    await waitFor(() => expect(screen.queryByText(/Cannot reach NEAR Testnet RPC/)).toBeNull(), { timeout: 4_000 });
+    expect(calls).toBe(2);
+  });
+});
+
+describe("RPC load (public endpoints rate-limit)", () => {
+  function counting(fail = false) {
+    const sim = new SimulatedChain();
+    const calls: Record<string, number> = {};
+    const reader = new Proxy(sim, {
+      get(target, prop, recv) {
+        const v = Reflect.get(target, prop, recv);
+        if (prop === "kind") return "live";
+        if (typeof v !== "function" || typeof prop !== "string" || !prop.startsWith("get")) return typeof v === "function" ? v.bind(target) : v;
+        return async (...args: unknown[]) => {
+          calls[prop] = (calls[prop] ?? 0) + 1;
+          if (fail && prop === "getGameState" && calls[prop]! > 1) throw Object.assign(new Error("Failed to fetch"), { name: "RpcError" });
+          return (v as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    }) as unknown as LastReader;
+    return { reader, calls };
+  }
+
+  it("light polls read only get_game_state while nothing moves", async () => {
+    const { reader, calls } = counting();
+    render(
+      <LastProvider config={resolveConfig({ VITE_LAST_CONTRACT_ID: "last.testnet" })} reader={reader} writer={null} pollMs={20}>
+        <App />
+      </LastProvider>,
+    );
+    // waitFor (not one long act): lets React run the probe and the polling loop in real time
+    await waitFor(() => expect(calls.getGameState ?? 0).toBeGreaterThan(10), { timeout: 3_000 });
+    const game = calls.getGameState ?? 0;
+    const market = calls.getMarketState ?? 0;
+    expect(market).toBeLessThanOrEqual(Math.ceil(game / 2) + 2); // ≈ every 2nd poll, not every poll
+    expect(calls.getStorageBounds).toBe(1); // read once
+  });
+
+  it("backs off while the RPC keeps failing", async () => {
+    const { reader, calls } = counting(true);
+    render(
+      <LastProvider config={resolveConfig({ VITE_LAST_CONTRACT_ID: "last.testnet" })} reader={reader} writer={null} pollMs={20}>
+        <App />
+      </LastProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(/data may be stale/)).toBeTruthy(), { timeout: 2_000 });
+    const start = calls.getGameState!;
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    await waitFor(() => expect(true).toBe(true)); // let pending React work flush
+    // without back-off: ~30 polls in 600 ms; with ×2 back-off (20, 40, 80, 160, 320 ms): ≤ 7
+    expect(calls.getGameState! - start).toBeLessThanOrEqual(8);
   });
 });

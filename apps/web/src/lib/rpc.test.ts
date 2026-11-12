@@ -78,6 +78,7 @@ describe("RPC client", () => {
   it("default endpoints put FastNEAR first (rpc.testnet.near.org is deprecated)", async () => {
     const { DEFAULT_RPC_URLS } = await import("../config");
     expect(DEFAULT_RPC_URLS[0]).toBe("https://test.rpc.fastnear.com");
+    expect(DEFAULT_RPC_URLS).not.toContain("https://rpc.testnet.near.org");
   });
 
   it("throws a network RpcError when every endpoint fails (no silent fallback)", async () => {
@@ -86,6 +87,7 @@ describe("RPC client", () => {
     const err = await failure(viewFunction(rpc, "c.testnet", "x"));
     expect(err).toBeInstanceOf(RpcError);
     expect(err.kind).toBe("network");
+    expect(err.message).toMatch(/All RPC endpoints failed.*a\.example.*b\.example/); // every endpoint reported
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

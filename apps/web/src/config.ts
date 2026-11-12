@@ -22,10 +22,11 @@ export interface AppConfig {
 }
 
 /**
- * FastNEAR first: rpc.testnet.near.org is deprecated and answers `-429 THIS ENDPOINT IS DEPRECATED`
- * under normal polling (seen during the Gate 4 run, 2026-11-12). Kept only as a last fallback.
+ * FastNEAR, then dRPC (both CORS-enabled, from NEAR's provider list). rpc.testnet.near.org is NOT
+ * used: it is deprecated and answers 429 even to single requests (Gate 4 run, 2026-11-12).
+ * The client sticks to the last endpoint that answered, so a rate-limited one is skipped.
  */
-export const DEFAULT_RPC_URLS = ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"];
+export const DEFAULT_RPC_URLS = ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
 export const DEFAULT_EXPLORER_URL = "https://testnet.nearblocks.io";
 
 /** NEAR account id rules (2–64 chars, lowercase, `-`/`_` separators, `.`-separated parts). */
