@@ -26,7 +26,23 @@ cargo test --manifest-path contracts/last/Cargo.toml
 cd contracts/last && cargo near build non-reproducible-wasm
 ```
 
-Sandbox tests (`near-workspaces`) may need Linux/WSL.
+The pure AMM functions are `market::calc_buy` / `calc_sell`: a free function must not share a name with a `#[near]` method (`quote_buy`, …), or the WASM build fails with E0428 while `cargo test` still passes.
+
+On Windows, near-sdk's `unit-testing` feature needs NASM + CMake; run tests from WSL instead, with the target dir outside OneDrive:
+
+```bash
+wsl -d Ubuntu-24.04 -- bash -lc 'source ~/.cargo/env; cd "$(wslpath "<repo path>")" && CARGO_TARGET_DIR=~/last-target cargo test --manifest-path contracts/last/Cargo.toml'
+```
+
+Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`.
+
+Sandbox tests (`near-workspaces`, Linux/WSL only) take the built WASM:
+
+```bash
+LAST_WASM=~/last-target/near/last.wasm CARGO_TARGET_DIR=~/last-it-target cargo test --manifest-path tests/integration/Cargo.toml -- --nocapture
+```
+
+`#[private]` is enforced only in the WASM entry point: test "callback only from self" in the sandbox, not in unit tests.
 
 ## Out of scope for V2
 

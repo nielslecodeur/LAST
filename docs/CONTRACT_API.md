@@ -1,10 +1,14 @@
 # LAST — Contract API
 
-**Status:** DRAFT v0.1 (Gate 0). Interface agreed between Developer A (contract) and Developer B (web) before implementation. **Nothing here is deployed yet.** Changes go through both developers and bump the version below.
+**Status:** DRAFT v0.3. Interface agreed between Developer A (contract) and Developer B (web) before implementation. **Nothing here is deployed yet.** Changes go through both developers and bump the version below.
+
+Every method below is implemented on `feat/contracts` (Gates 1–2), covered by unit tests and a `near-workspaces` sandbox scenario. Not deployed to testnet yet.
 
 | Version | Date | Change |
 |---|---|---|
 | 0.1 | 2026-11-12 | First draft from `docs/SPEC_V2.md` |
+| 0.2 | 2026-11-12 | Gate 1: added `buy_count`/`sell_count` to market state, `get_roles`, `get_integrity`; new error codes `ERR_ZERO_AMOUNT`, `ERR_USE_SELL`, `ERR_POSITIVE_BALANCE`, `ERR_FORBIDDEN`, `ERR_INSOLVENT`, `ERR_OVERFLOW` |
+| 0.3 | 2026-11-12 | Gate 2: settle/claim/withdraw implemented; `get_integrity` gains `in_flight` |
 
 ## 0. Conventions
 
@@ -68,7 +72,7 @@ Recommended gas: 30 Tgas for `buy`/`sell`/`settle_round`, 50 Tgas for `withdraw_
 - Sells LAST from the **caller's own** balance. Never changes leader or deadline.
 - `payout` is credited to the caller's **withdrawable NEAR credit**; no NEAR is sent in this call.
 - Returns `{ "gross_near_out": "...", "fee": "...", "payout": "...", "credit_available": "..." }`.
-- Errors: `ERR_ONE_YOCTO`, `ERR_NOT_REGISTERED`, `ERR_INSUFFICIENT_BALANCE`, `ERR_ROUND_EXPIRED`, `ERR_ZERO_OUTPUT`, `ERR_SLIPPAGE`, `ERR_INSUFFICIENT_LIQUIDITY`.
+- Errors: `ERR_ONE_YOCTO`, `ERR_ZERO_AMOUNT`, `ERR_NOT_REGISTERED`, `ERR_INSUFFICIENT_BALANCE`, `ERR_ROUND_EXPIRED`, `ERR_ZERO_OUTPUT`, `ERR_SLIPPAGE`, `ERR_INSUFFICIENT_LIQUIDITY`.
 
 ### `withdraw_near_credit()` — 1 yocto
 
@@ -136,6 +140,8 @@ Recommended gas: 30 Tgas for `buy`/`sell`/`settle_round`, 50 Tgas for `withdraw_
   "last_inventory": "...",
   "total_buy_volume": "...",
   "total_sell_volume": "...",
+  "buy_count": "42",
+  "sell_count": "9",
   "treasury_reserve": "...",
   "ops_reserve": "...",
   "buy_fee_bps": 400,
@@ -170,6 +176,33 @@ UI computes `min_tokens_out` / `min_near_out` from the quote and the user's slip
 ```
 
 `claimable_rounds` lists settled rounds won by the account whose prize is not yet `PAID`.
+
+### `get_roles()`
+
+`{ "owner_id": "...", "treasury_id": "...", "platform_id": "..." }` — disclosed roles. None of them can change game outcome, fees, supply or reserves.
+
+### `get_integrity()`
+
+Real contract balance vs every named obligation (SPEC §1.6), for the demo reconciliation:
+
+```json
+{
+  "account_balance": "...",
+  "storage_cost": "...",
+  "total_obligations": "...",
+  "market_near_reserve": "...",
+  "active_pot": "...",
+  "next_seed_pot": "...",
+  "treasury_reserve": "...",
+  "ops_reserve": "...",
+  "credits_outstanding": "...",
+  "prizes_outstanding": "...",
+  "in_flight": "...",
+  "surplus": "..."
+}
+```
+
+`in_flight` is NEAR already sent by a transfer promise whose callback has not run yet (it left the balance but is still owed, or comes back on failure). `surplus = account_balance + in_flight - storage_cost - total_obligations`. Every change method checks `account_balance + in_flight >= storage_cost + total_obligations` and panics with `ERR_INSOLVENT` otherwise.
 
 ## 4. NEP-141 / NEP-145 / NEP-148 (standard)
 
@@ -208,6 +241,12 @@ Events feed the activity list only. Winner, pots and balances always come from t
 | `ERR_INSUFFICIENT_LIQUIDITY` | reserve cannot cover output | Not enough liquidity |
 | `ERR_INSUFFICIENT_BALANCE` | selling more LAST than held | Not enough LAST |
 | `ERR_ONE_YOCTO` | missing 1 yocto deposit | — |
+| `ERR_ZERO_AMOUNT` | `sell` of 0 LAST | Enter an amount |
+| `ERR_USE_SELL` | `ft_transfer(_call)` to the contract itself | Use Sell instead |
+| `ERR_POSITIVE_BALANCE` | `storage_unregister` while holding LAST | Sell or transfer LAST first |
+| `ERR_FORBIDDEN` | the contract account calling `buy`/`sell`/`storage_unregister` on itself | — |
+| `ERR_INSOLVENT` | balance would not cover obligations + storage | Contract error, report it |
+| `ERR_OVERFLOW` / `ERR_UNDERFLOW` / `ERR_DIV_ZERO` | arithmetic guard | Contract error, report it |
 | `ERR_NO_CREDIT` / `ERR_WITHDRAW_IN_FLIGHT` | nothing to withdraw / already pending | — |
 | `ERR_NO_ACTIVE_ROUND` / `ERR_NOT_EXPIRED` | settle not possible | — |
 | `ERR_UNKNOWN_ROUND` / `ERR_NOT_WINNER` / `ERR_ALREADY_PAID` / `ERR_CLAIM_IN_FLIGHT` / `ERR_EMPTY_PRIZE` | claim not possible | — |
