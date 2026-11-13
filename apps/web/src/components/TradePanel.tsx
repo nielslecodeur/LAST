@@ -57,7 +57,7 @@ export function TradePanel() {
               side === s ? (s === "buy" ? "bg-acid text-ink" : "bg-text text-ink") : "text-mute hover:text-text",
             )}
           >
-            {s === "buy" ? "Buy LAST" : "Sell LAST"}
+            {s === "buy" ? "Buy $LAST" : "Sell $LAST"}
           </button>
         ))}
       </div>
@@ -67,7 +67,7 @@ export function TradePanel() {
       {accountId && !walletError && (
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
           <Balance label="NEAR available" value={nearBalance === null ? null : formatNear(nearBalance, 4)} />
-          <Balance label="LAST balance" value={account ? formatLast(account.lastBalance) : null} />
+          <Balance label="$LAST balance" value={account ? formatLast(account.lastBalance) : null} />
         </div>
       )}
 
@@ -157,7 +157,7 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
         grossYocto: gross,
         minTokensOut: minOut,
         storageDeposit,
-        label: `${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
+        label: `${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} $LAST for ${formatNear(gross)} NEAR`,
       }),
     );
     if (ok) setInput("");
@@ -182,10 +182,10 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
       )}
 
       <div className="rounded-xl border border-line bg-panel-2/60 p-3">
-        <Row label="You receive (est.)" strong value={quote ? `${formatLast(quote.tokensOut)} LAST` : loading ? "Quoting…" : "—"} />
-        <Row label={`LAST market fee (${market ? formatBps(market.buyFeeBps) : "4%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <Row label="You receive (est.)" strong value={quote ? `${formatLast(quote.tokensOut)} $LAST` : loading ? "Quoting…" : "—"} />
+        <Row label={`$LAST market fee (${market ? formatBps(market.buyFeeBps) : "4%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
         <ImpactRow bps={impact} />
-        <Row label={`Min received (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatLast(minOut)} LAST` : "—"} />
+        <Row label={`Min received (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatLast(minOut)} $LAST` : "—"} />
         {check.storageDeposit !== null && <Row label="Storage registration (once)" value={`${formatNear(check.storageDeposit, 6)} NEAR`} />}
         <GasRow gas={gas} />
         {quote && (
@@ -215,11 +215,11 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
         </Button>
       ) : (
         <Button className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "buy" ? "Confirm in wallet…" : blocker ?? (quote?.eligible ? "Buy LAST & steal the crown" : "Buy LAST")}
+          {isBusy(tx) && tx.kind === "buy" ? "Confirm in wallet…" : blocker ?? (quote?.eligible ? "Buy $LAST & steal the crown" : "Buy $LAST")}
         </Button>
       )}
       <p className="text-[11px] leading-relaxed text-mute">
-        Only buys through LAST's own market count. The contract re-checks everything; a buy confirmed at or after the deadline is rejected.
+        Only buys through the $LAST market count. The contract re-checks everything; a buy confirmed at or after the deadline is rejected.
       </p>
     </div>
   );
@@ -249,7 +249,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
         contractId: reader.contractId,
         tokensIn,
         minNearOut: minOut,
-        label: `Sell ${formatLast(tokensIn)} LAST → ${formatNear(quote.payout)} NEAR credit`,
+        label: `Sell ${formatLast(tokensIn)} $LAST → ${formatNear(quote.payout)} NEAR credit`,
       }),
     );
     if (ok) setInput("");
@@ -260,7 +260,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
       <AmountInput
         id="sell-amount"
         label="You sell"
-        unit="LAST"
+        unit="$LAST"
         value={input}
         onChange={setInput}
         invalid={invalid}
@@ -270,7 +270,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
 
       <div className="rounded-xl border border-line bg-panel-2/60 p-3">
         <Row label="Gross NEAR out" value={quote ? `${formatNear(quote.grossNearOut, 6)} NEAR` : loading ? "Quoting…" : "—"} />
-        <Row label={`LAST market fee (${market ? formatBps(market.sellFeeBps) : "2%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
+        <Row label={`$LAST market fee (${market ? formatBps(market.sellFeeBps) : "2%"})`} value={quote ? `${formatNear(quote.fee, 6)} NEAR` : "—"} />
         <ImpactRow bps={impact} />
         <Row label="NEAR credit (est.)" strong value={quote ? `${formatNear(quote.payout, 6)} NEAR` : "—"} />
         <Row label={`Min credit (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatNear(minOut, 6)} NEAR` : "—"} />
@@ -289,7 +289,7 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
         </Button>
       ) : (
         <Button variant="secondary" className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "sell" ? "Confirm in wallet…" : blocker ?? "Sell LAST"}
+          {isBusy(tx) && tx.kind === "sell" ? "Confirm in wallet…" : blocker ?? "Sell $LAST"}
         </Button>
       )}
     </div>

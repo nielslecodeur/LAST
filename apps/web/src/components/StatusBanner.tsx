@@ -42,7 +42,7 @@ function SourceBanner() {
     );
   }
   if (deployment === "wrong_network") {
-    return <Banner tone="heat" title="Wrong network — refused">{rpcError} LAST runs on NEAR Testnet only; nothing is read from this endpoint.</Banner>;
+    return <Banner tone="heat" title="Wrong network — refused">{rpcError} $LAST runs on NEAR Testnet only; nothing is read from this endpoint.</Banner>;
   }
   if (deployment === "config_error") {
     return <Banner tone="heat" title="Configuration refused">{config.configError}</Banner>;
@@ -56,7 +56,7 @@ function SourceBanner() {
           : "No contract id configured (VITE_LAST_CONTRACT_ID).";
     return (
       <Banner tone="mute" title="CONTRACT NOT DEPLOYED">
-        {detail} The LAST contract has not been deployed to testnet yet, so there is no live data to show and every
+        {detail} The $LAST contract has not been deployed to testnet yet, so there is no live data to show and every
         blockchain action is disabled. No figures on this page are invented.
       </Banner>
     );

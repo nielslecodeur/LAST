@@ -22,12 +22,11 @@ export function TopBar() {
   );
 
   return (
-    <header className="sticky top-0 z-30 border-b border-line/70 bg-ink/80 backdrop-blur-md">
+    <header className="sticky top-0 z-30 border-b-2 border-text bg-ink">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <a href="#top" className="flex items-center gap-2.5" aria-label="LAST home">
+        <a href="#top" className="flex items-center gap-2" aria-label="$LAST home">
           <CrownIcon className="h-7 w-7 text-acid" />
-          <span className="font-mono text-xl font-extrabold tracking-tight">LAST</span>
-          <span className="hidden text-xs text-mute md:inline">Last Buyer Wins</span>
+          <span className="font-poster riso text-3xl leading-none">$LAST</span>
         </a>
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline-flex">
@@ -36,7 +35,7 @@ export function TopBar() {
           {sourceBadge}
           {accountId ? (
             <div className="flex items-center gap-1">
-              <span className="hidden rounded-xl border border-line bg-panel-2 px-3 py-2 font-mono text-sm sm:inline">
+              <span className="hidden border-2 border-text bg-panel-2 px-3 py-2 font-mono text-sm sm:inline">
                 {simulated ? shortAccount(accountId) : <ExternalLink href={explorerAccountUrl(accountId, config.explorerUrl)}>{shortAccount(accountId)}</ExternalLink>}
               </span>
               <Button variant="ghost" className="px-2 py-2 text-sm" onClick={() => void disconnect()}>

@@ -9,11 +9,11 @@ export function Card(props: { title?: ReactNode; aside?: ReactNode; className?: 
     <section
       id={props.id}
       aria-label={typeof props.title === "string" ? props.title : undefined}
-      className={cx("rounded-2xl border border-line bg-panel/85 p-5 backdrop-blur-sm sm:p-6", props.className)}
+      className={cx("hard bg-panel p-5 sm:p-6", props.className)}
     >
       {(props.title || props.aside) && (
         <header className="mb-4 flex items-center justify-between gap-3">
-          {props.title && <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-mute">{props.title}</h2>}
+          {props.title && <h2 className="font-poster text-xl uppercase tracking-wide text-text">{props.title}</h2>}
           {props.aside}
         </header>
       )}
@@ -26,17 +26,17 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 export function Button({ variant = "primary", className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   const styles: Record<Variant, string> = {
-    primary: "bg-acid text-ink hover:bg-[#e2ff6e] disabled:bg-panel-2 disabled:text-mute",
-    secondary: "border border-line bg-panel-2 text-text hover:border-acid/60 disabled:text-mute disabled:hover:border-line",
+    primary: "hard press bg-acid text-panel-2 hover:bg-acid-deep disabled:border-line disabled:bg-panel-2 disabled:text-mute disabled:shadow-none",
+    secondary: "border-2 border-text bg-panel-2 text-text hover:bg-flame/40 disabled:border-line disabled:text-mute disabled:hover:bg-panel-2",
     ghost: "text-mute hover:text-text disabled:opacity-50",
-    danger: "bg-heat text-white hover:brightness-110 disabled:bg-panel-2 disabled:text-mute",
+    danger: "hard press bg-heat text-panel-2 hover:brightness-110 disabled:border-line disabled:bg-panel-2 disabled:text-mute disabled:shadow-none",
   };
   return (
     <button
       type="button"
       {...rest}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold transition-colors disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center gap-2 px-4 py-3 font-semibold transition-colors disabled:cursor-not-allowed",
         styles[variant],
         className,
       )}
@@ -48,14 +48,14 @@ type Tone = "acid" | "heat" | "gold" | "sky" | "mute";
 
 export function Badge({ tone = "mute", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   const tones: Record<Tone, string> = {
-    acid: "border-acid/40 bg-acid/10 text-acid",
-    heat: "border-heat/40 bg-heat/10 text-heat",
-    gold: "border-gold/40 bg-gold/10 text-gold",
-    sky: "border-sky/40 bg-sky/10 text-sky",
+    acid: "border-acid bg-acid text-panel-2",
+    heat: "border-heat bg-heat text-panel-2",
+    gold: "border-text bg-flame text-text",
+    sky: "border-text bg-panel-2 text-text",
     mute: "border-line bg-panel-2 text-mute",
   };
   return (
-    <span className={cx("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wider", tones[tone], className)}>
+    <span className={cx("inline-flex items-center gap-1.5 border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wider", tones[tone], className)}>
       {children}
     </span>
   );
@@ -63,7 +63,7 @@ export function Badge({ tone = "mute", children, className }: { tone?: Tone; chi
 
 export function Stat(props: { label: ReactNode; value: ReactNode; hint?: ReactNode; className?: string }) {
   return (
-    <div className={cx("min-w-0 rounded-xl border border-line/70 bg-panel-2/60 p-3", props.className)}>
+    <div className={cx("min-w-0 border border-line bg-panel-2 p-3", props.className)}>
       <div className="text-[11px] font-medium uppercase tracking-wider text-mute">{props.label}</div>
       <div className="mt-1 truncate font-mono text-base font-bold tabular text-text">{props.value}</div>
       {props.hint && <div className="mt-0.5 text-[11px] text-mute">{props.hint}</div>}

@@ -19,36 +19,27 @@ export function App() {
       <TopBar />
       <StatusBanner />
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
-        <div className="max-w-3xl">
-          <h2 className="font-mono text-3xl font-extrabold tracking-tight sm:text-4xl">
-            LAST — <span className="text-acid">Steal the Crown</span>
-          </h2>
-          <p className="mt-2 text-base text-text/80 sm:text-lg">
-            Every eligible buy steals the crown and restarts the countdown. If nobody buys before it ends, the last buyer wins the NEAR
-            jackpot — decided by the contract, not by your browser.
-          </p>
-        </div>
-        <div className="grid gap-5 lg:grid-cols-12">
-          <div className="lg:col-span-7">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="min-w-0 lg:col-span-7">
             <Hero />
           </div>
-          <div className="lg:col-span-5">
+          <div className="min-w-0 lg:col-span-5">
             <TradePanel />
           </div>
         </div>
-        <div className="grid gap-5 lg:grid-cols-12">
-          <div className="space-y-5 lg:col-span-7">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="min-w-0 space-y-5 lg:col-span-7">
             <RewardsPanel />
             <MarketPanel />
           </div>
-          <div className="space-y-5 lg:col-span-5">
+          <div className="min-w-0 space-y-5 lg:col-span-5">
             <CreditPanel />
             <ActivityPanel />
           </div>
         </div>
         <HowItWorks />
       </main>
-      <footer className="border-t border-line/70">
+      <footer className="border-t-2 border-text">
         <div className="mx-auto max-w-7xl space-y-2 px-4 py-6 text-xs text-mute sm:px-6">
           <p>
             <strong className="text-text/80">NEAR Testnet only — no monetary value.</strong> Experimental, unaudited prize game. Price impact, fees, bots and
