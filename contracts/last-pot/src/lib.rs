@@ -17,7 +17,6 @@
 //! The owner can only replace the reporter. Nobody can withdraw the pot except by winning.
 
 use near_sdk::json_types::{U128, U64};
-use near_sdk::serde_json::json;
 use near_sdk::store::LookupMap;
 use near_sdk::{env, log, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
@@ -171,9 +170,13 @@ fn sub(a: u128, b: u128) -> u128 {
     a.checked_sub(b).unwrap_or_else(|| env::panic_str("ERR_UNDERFLOW"))
 }
 
-fn emit(event: &str, data: near_sdk::serde_json::Value) {
-    let payload = json!({ "standard": "last-pot", "version": "1.0.0", "event": event, "data": [data] });
-    env::log_str(&format!("EVENT_JSON:{payload}"));
+/// NEP-297 event. `fields` is the inner JSON object body. Every value written into it is an
+/// account id, a number or a tx hash restricted to ASCII alphanumerics, so no escaping is needed
+/// (plain formatting keeps serde_json's dynamic `Value` out of the WASM: smaller, cheaper code).
+fn emit(event: &str, fields: &str) {
+    env::log_str(&format!(
+        "EVENT_JSON:{{\"standard\":\"last-pot\",\"version\":\"1.0.0\",\"event\":\"{event}\",\"data\":[{{{fields}}}]}}"
+    ));
 }
 
 #[near]
@@ -214,7 +217,10 @@ impl PotContract {
     /// `buy_timestamp_ns` is the block timestamp of the buy; reports must be chronological.
     pub fn record_buy(&mut self, buyer: AccountId, near_in: U128, tx_hash: String, buy_timestamp_ns: U64) -> StateView {
         require!(env::predecessor_account_id() == self.reporter_id, "ERR_NOT_REPORTER");
-        require!(!tx_hash.is_empty() && tx_hash.len() <= MAX_TX_HASH_LEN, "ERR_BAD_TX_HASH");
+        require!(
+            !tx_hash.is_empty() && tx_hash.len() <= MAX_TX_HASH_LEN && tx_hash.bytes().all(|b| b.is_ascii_alphanumeric()),
+            "ERR_BAD_TX_HASH"
+        );
         require!(near_in.0 >= self.min_eligible_buy, "ERR_NOT_ELIGIBLE");
         let now = env::block_timestamp();
         let ts = buy_timestamp_ns.0;
@@ -243,7 +249,7 @@ impl PotContract {
                     eligible_buys: 1,
                     last_tx_hash: tx_hash.clone(),
                 });
-                emit("round_started", json!({ "round_id": U64(self.round_id), "started_at_ns": U64(ts) }));
+                emit("round_started", &format!("\"round_id\":\"{}\",\"started_at_ns\":\"{ts}\"", self.round_id));
             }
         }
         self.last_buy_ns = ts;
@@ -251,14 +257,10 @@ impl PotContract {
         let deadline = self.current.as_ref().map(|r| r.deadline_ns).unwrap_or(0);
         emit(
             "buy_recorded",
-            json!({
-                "round_id": U64(self.round_id),
-                "buyer": buyer,
-                "near_in": near_in,
-                "tx_hash": tx_hash,
-                "buy_timestamp_ns": U64(ts),
-                "deadline_ns": U64(deadline),
-            }),
+            &format!(
+                "\"round_id\":\"{}\",\"buyer\":\"{buyer}\",\"near_in\":\"{}\",\"tx_hash\":\"{tx_hash}\",\"buy_timestamp_ns\":\"{ts}\",\"deadline_ns\":\"{deadline}\"",
+                self.round_id, near_in.0
+            ),
         );
         self.get_state()
     }
@@ -296,13 +298,11 @@ impl PotContract {
 
         emit(
             "round_settled",
-            json!({
-                "round_id": U64(round_id),
-                "winner": round.leader,
-                "prize": U128(prize),
-                "pot": U128(pot),
-                "settled_by": env::predecessor_account_id(),
-            }),
+            &format!(
+                "\"round_id\":\"{round_id}\",\"winner\":\"{}\",\"prize\":\"{prize}\",\"pot\":\"{pot}\",\"settled_by\":\"{}\"",
+                round.leader,
+                env::predecessor_account_id()
+            ),
         );
 
         if prize == 0 {
@@ -353,7 +353,13 @@ impl PotContract {
         }
         emit(
             "payout",
-            json!({ "round_id": round_id, "winner": r.winner, "amount": U128(r.prize), "status": if success { "PAID" } else { "FAILED" } }),
+            &format!(
+                "\"round_id\":\"{}\",\"winner\":\"{}\",\"amount\":\"{}\",\"status\":\"{}\"",
+                round_id.0,
+                r.winner,
+                r.prize,
+                if success { "PAID" } else { "FAILED" }
+            ),
         );
         self.rounds.insert(round_id.0, r);
         success
@@ -379,7 +385,7 @@ impl PotContract {
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT");
         Promise::new(self.wrap_id.clone()).function_call(
             "near_withdraw".to_string(),
-            json!({ "amount": amount }).to_string().into_bytes(),
+            format!("{{\"amount\":\"{}\"}}", amount.0).into_bytes(),
             NearToken::from_yoctonear(1),
             GAS_FOR_UNWRAP,
         )
@@ -394,7 +400,7 @@ impl PotContract {
     pub fn set_reporter(&mut self, reporter_id: AccountId) {
         require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
         require!(env::predecessor_account_id() == self.owner_id, "ERR_NOT_OWNER");
-        emit("reporter_changed", json!({ "from": self.reporter_id, "to": reporter_id }));
+        emit("reporter_changed", &format!("\"from\":\"{}\",\"to\":\"{reporter_id}\"", self.reporter_id));
         self.reporter_id = reporter_id;
     }
 
@@ -404,7 +410,7 @@ impl PotContract {
         require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
         require!(env::predecessor_account_id() == self.owner_id, "ERR_NOT_OWNER");
         require!(self.token_id.is_none(), "ERR_TOKEN_ALREADY_SET");
-        emit("token_set", json!({ "token_id": token_id }));
+        emit("token_set", &format!("\"token_id\":\"{token_id}\""));
         self.token_id = Some(token_id);
     }
 

@@ -1,6 +1,6 @@
 # $LAST on mainnet — Nearly launch + jackpot contract
 
-**Status:** code ready on `feat/mainnet-pot` (23 unit tests, WASM built, 171 KB). **Not deployed.** Every deploy and signature below needs explicit human approval.
+**Status:** code ready on `feat/mainnet-pot` (23 unit tests, WASM built with `--no-abi`, 153 KB). **Not deployed.** Every deploy and signature below needs explicit human approval.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Buy detection: a receipt on the $LAST token logging a NEP-141 `ft_transfer` **to
 | `min_eligible_buy` | `500000000000000000000000` (0.5 NEAR) |
 | `winner_share_bps` | `9000` (90% to the winner, 10% carried over) |
 | `settle_grace_ns` | `120000000000` (2 min for late reports) |
-| `reserve_floor` | `100000000000000000000000` (0.1 NEAR kept for storage growth) |
+| `reserve_floor` | `20000000000000000000000` (0.02 NEAR: room for the next round records; storage itself is already excluded from the pot) |
 | `wrap_id` | `wrap.near` |
 
 ## Runbook
@@ -51,14 +51,20 @@ Buy detection: a receipt on the $LAST token logging a NEP-141 `ft_transfer` **to
 Accounts (created and funded **by the team**, keys only in the near-cli legacy keychain, never in the repo):
 
 1. `heavycat9990.near` — main wallet: launches the token on Nearly, creates and funds the pot, is `owner_id` and, for the hackathon, also `reporter_id` (the bot signs with it, on the team's PC).
-2. `pot.heavycat9990.near` — the contract. ≈ 1.71 NEAR storage (171 KB) + 0.1 NEAR reserve floor → fund **1.9 NEAR**. Its key signs the deploy.
+2. `pot.heavycat9990.near` — the contract. ≈ 1.53 NEAR storage (153 KB) + 0.02 NEAR reserve floor + state → fund **1.6 NEAR**. Its key signs the deploy.
 
 If the bot moves to a server later, create a dedicated reporter account and call `set_reporter` from the owner.
+
+Build (smallest code = smallest storage deposit):
+
+```bash
+cd contracts/last-pot && CARGO_TARGET_DIR=~/last-pot-target cargo near build non-reproducible-wasm --no-abi
+```
 
 Deploy + init (one transaction, after approval):
 
 ```bash
-near contract deploy pot.heavycat9990.near use-file ~/last-pot-target/near/last_pot.wasm with-init-call new json-args '{"config":{"owner_id":"heavycat9990.near","reporter_id":"heavycat9990.near","token_id":null,"wrap_id":"wrap.near","round_duration_ns":"3600000000000","min_eligible_buy":"500000000000000000000000","winner_share_bps":9000,"settle_grace_ns":"120000000000","reserve_floor":"100000000000000000000000"}}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config mainnet sign-with-legacy-keychain send
+near contract deploy pot.heavycat9990.near use-file ~/last-pot-target/near/last_pot.wasm with-init-call new json-args '{"config":{"owner_id":"heavycat9990.near","reporter_id":"heavycat9990.near","token_id":null,"wrap_id":"wrap.near","round_duration_ns":"3600000000000","min_eligible_buy":"500000000000000000000000","winner_share_bps":9000,"settle_grace_ns":"120000000000","reserve_floor":"20000000000000000000000"}}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config mainnet sign-with-legacy-keychain send
 ```
 
 `token_id` starts null: after the Nearly launch the owner records it once with `set_token_id` (1 yocto).
