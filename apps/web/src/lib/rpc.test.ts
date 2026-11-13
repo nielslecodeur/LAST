@@ -123,7 +123,7 @@ describe("WASM export parsing → Gate 2 capabilities", () => {
 
   it("Gate 1 contract → every Gate 2 action off", () => {
     const caps = capabilitiesFromExports(wasmFunctionExports(wasmWithExports(["buy", "sell", "quote_buy", "get_account_state"])));
-    expect(caps).toEqual({ settleRound: false, claimReward: false, withdrawNearCredit: false, getRound: false, source: "wasm-exports" });
+    expect(caps).toEqual({ settleRound: false, claimReward: false, withdrawNearCredit: false, getRound: false, playBalance: false, source: "wasm-exports" });
   });
 
   it("Gate 2 contract → actions on", () => {

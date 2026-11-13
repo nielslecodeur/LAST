@@ -21,6 +21,8 @@ const KIND: Record<TxKind, string> = {
   claim: "CLAIM",
   withdraw: "WITHDRAW",
   register: "REGISTER",
+  session: "AUTO KEY",
+  deposit: "DEPOSIT",
 };
 
 /**

@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { resolveConfig } from "../config";
 import { classifyError, extractErrorCode } from "./errors";
 import { RpcError, toBase64 } from "./rpc";
-import { buildBuyTx, buildClaimTx, buildSellTx, buildSettleTx, buildWithdrawTx, interpretOutcome } from "./transactions";
+import { type FunctionCallAction, buildBuyTx, buildClaimTx, buildSellTx, buildSettleTx, buildWithdrawTx, interpretOutcome } from "./transactions";
 import { IDLE_TX, txReducer } from "./txMachine";
 import { type AccountState, type Capabilities, NO_GATE2 } from "./types";
 import { GAS_RESERVE_YOCTO, checkBuy, checkSell } from "./validation";
 
 const NEAR = 10n ** 24n;
-const GATE2: Capabilities = { settleRound: true, claimReward: true, withdrawNearCredit: true, getRound: true, source: "wasm-exports" };
+const GATE2: Capabilities = { settleRound: true, claimReward: true, withdrawNearCredit: true, getRound: true, playBalance: true, source: "wasm-exports" };
 const b64json = (v: unknown) => toBase64(new TextEncoder().encode(JSON.stringify(v)));
 
 describe("transaction builders (CONTRACT_API v0.2)", () => {
@@ -23,9 +23,10 @@ describe("transaction builders (CONTRACT_API v0.2)", () => {
 
   it("unregistered buyer: storage_deposit (bounds.min) then buy, in ONE transaction", () => {
     const tx = buildBuyTx({ contractId: "last.testnet", grossYocto: NEAR, minTokensOut: 1n, storageDeposit: 1_250_000_000_000_000_000_000n, label: "b" });
-    expect(tx.actions.map((a) => a.params.methodName)).toEqual(["storage_deposit", "buy"]);
-    expect(tx.actions[0]!.params.deposit).toBe("1250000000000000000000");
-    expect(tx.actions[0]!.params.args).toEqual({ registration_only: true });
+    const fc = tx.actions as FunctionCallAction[];
+    expect(fc.map((a) => a.params.methodName)).toEqual(["storage_deposit", "buy"]);
+    expect(fc[0]!.params.deposit).toBe("1250000000000000000000");
+    expect(fc[0]!.params.args).toEqual({ registration_only: true });
   });
 
   it("sell: exactly 1 yoctoNEAR", () => {

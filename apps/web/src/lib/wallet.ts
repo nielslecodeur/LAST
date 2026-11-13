@@ -18,6 +18,8 @@ export interface LastWriter {
   onAccountChange(cb: (accountId: string | null) => void): () => void;
   /** Signs + sends. Resolves with the final execution outcome; throws on rejection/transport error. */
   send(tx: TxRequest): Promise<ExecutionOutcomeLike>;
+  /** Several transactions in ONE wallet approval (in order). */
+  sendMany(txs: TxRequest[]): Promise<ExecutionOutcomeLike[]>;
 }
 
 type Connector = import("@hot-labs/near-connect").NearConnector;
@@ -80,6 +82,16 @@ export class HotConnectWriter implements LastWriter {
     const c = await this.get();
     await c.disconnect();
     this.emit(null);
+  }
+
+  async sendMany(txs: TxRequest[]): Promise<ExecutionOutcomeLike[]> {
+    const c = await this.get();
+    const wallet = await c.wallet();
+    const outcomes = await wallet.signAndSendTransactions({
+      network: NETWORK_ID,
+      transactions: txs.map((tx) => ({ receiverId: tx.receiverId, actions: tx.actions })),
+    });
+    return outcomes as unknown as ExecutionOutcomeLike[];
   }
 
   async send(tx: TxRequest): Promise<ExecutionOutcomeLike> {

@@ -86,7 +86,7 @@ describe("stale registration (Gate 4 finding)", () => {
     const sent: string[][] = [];
     const writer: LastWriter = Object.assign(Object.create(sim), {
       send: (tx: Parameters<LastWriter["send"]>[0]) => {
-        sent.push(tx.actions.map((a) => a.params.methodName));
+        sent.push(tx.actions.map((a) => (a.type === "FunctionCall" ? a.params.methodName : a.type)));
         return sim.send(tx);
       },
     });
@@ -116,7 +116,9 @@ describe("expiry → settle → claim → double claim rejected (Gate 2 simulate
 
     // Expired on-chain, not settled: trading blocked, settle offered, you are told it is pending.
     expect(screen.getAllByText(/settlement pending/i).length).toBeGreaterThan(0);
-    expect(button(/Round over — settle first/).disabled).toBe(true);
+    // Trading is not blocked any more: the next buy settles the round in the same transaction.
+    expect(screen.queryByRole("button", { name: /Round over — settle first/ })).toBeNull();
+    expect(screen.getByText(/This transaction first settles it/)).toBeTruthy();
     fireEvent.click(button(/Settle round #1/));
     await waitFor(() => expect(screen.getByText(/Round #1 settled on-chain/)).toBeTruthy());
 

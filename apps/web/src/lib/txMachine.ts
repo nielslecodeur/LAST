@@ -26,10 +26,12 @@ export interface TxState {
   error: UiError | null;
   /** Extra context on success / unresolved (e.g. "took the crown", "IN_FLIGHT"). */
   note: string | null;
+  /** Signed by the auto-mode session key, not in the wallet. */
+  auto: boolean;
 }
 
 export type TxEvent =
-  | { type: "SIGN"; kind: TxKind; label: string }
+  | { type: "SIGN"; kind: TxKind; label: string; auto?: boolean }
   | { type: "OUTCOME_OK"; hash: string | null }
   | { type: "OUTCOME_FAILED"; hash: string | null; error: UiError }
   | { type: "THROWN"; error: UiError }
@@ -37,13 +39,13 @@ export type TxEvent =
   | { type: "UNRESOLVED"; note: string }
   | { type: "RESET" };
 
-export const IDLE_TX: TxState = { phase: "idle", kind: null, label: null, hash: null, error: null, note: null };
+export const IDLE_TX: TxState = { phase: "idle", kind: null, label: null, hash: null, error: null, note: null, auto: false };
 
 export function txReducer(state: TxState, ev: TxEvent): TxState {
   switch (ev.type) {
     case "SIGN":
       if (isBusy(state)) return state; // one transaction at a time
-      return { phase: "signing", kind: ev.kind, label: ev.label, hash: null, error: null, note: null };
+      return { phase: "signing", kind: ev.kind, label: ev.label, hash: null, error: null, note: null, auto: ev.auto === true };
     case "OUTCOME_OK":
       return state.phase === "signing" ? { ...state, phase: "pending", hash: ev.hash } : state;
     case "OUTCOME_FAILED":

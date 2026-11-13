@@ -24,12 +24,28 @@ export interface FunctionCallAction {
   params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string };
 }
 
-export type TxKind = "buy" | "sell" | "withdraw" | "settle" | "claim" | "register";
+/** Session-key management: AddKey / DeleteKey on the user's own account, signed in the wallet. */
+export interface AddKeyAction {
+  type: "AddKey";
+  params: {
+    publicKey: string;
+    accessKey: { permission: { receiverId: string; allowance?: string; methodNames: string[] } };
+  };
+}
+export interface DeleteKeyAction {
+  type: "DeleteKey";
+  params: { publicKey: string };
+}
+export type TxAction = FunctionCallAction | AddKeyAction | DeleteKeyAction;
+
+export type TxKind = "buy" | "sell" | "withdraw" | "settle" | "claim" | "register" | "session" | "deposit";
 
 export interface TxRequest {
   kind: TxKind;
   receiverId: string;
-  actions: FunctionCallAction[];
+  actions: TxAction[];
+  /** Signed by the in-browser session key (no wallet popup) instead of the wallet. */
+  auto?: boolean;
   /** Human summary for the confirmation toast. */
   label: string;
   /** Round targeted by settle / claim (used to verify the on-chain effect). */
@@ -38,7 +54,7 @@ export interface TxRequest {
 
 /** Total gas attached to a transaction (upper bound of what it can burn). */
 export function totalGas(tx: TxRequest): bigint {
-  return tx.actions.reduce((sum, a) => sum + BigInt(a.params.gas), 0n);
+  return tx.actions.reduce((sum, a) => (a.type === "FunctionCall" ? sum + BigInt(a.params.gas) : sum), 0n);
 }
 
 function call(methodName: string, args: Record<string, unknown>, gas: bigint, deposit: bigint): FunctionCallAction {
@@ -64,23 +80,27 @@ export function buildBuyTx(p: {
   minTokensOut: bigint;
   /** Set when the buyer is not registered yet. */
   storageDeposit?: bigint | null;
+  /** The round is EXPIRED on-chain: settle it in the same transaction, then buy (one signature). */
+  settleFirst?: boolean;
   label: string;
 }): TxRequest {
   if (p.grossYocto <= 0n) throw new RangeError("buy amount must be positive");
   if (p.minTokensOut < 0n) throw new RangeError("min_tokens_out must be >= 0");
   const actions: FunctionCallAction[] = [];
+  if (p.settleFirst) actions.push(settleAction());
   if (p.storageDeposit != null) actions.push(storageDepositAction(p.storageDeposit));
   actions.push(call("buy", { min_tokens_out: p.minTokensOut.toString() }, GAS.buy, p.grossYocto));
   return { kind: "buy", receiverId: p.contractId, actions, label: p.label };
 }
 
 /** `sell(tokens_in, min_near_out)` with exactly 1 yoctoNEAR. Creates a withdrawable credit. */
-export function buildSellTx(p: { contractId: string; tokensIn: bigint; minNearOut: bigint; label: string }): TxRequest {
+export function buildSellTx(p: { contractId: string; tokensIn: bigint; minNearOut: bigint; settleFirst?: boolean; label: string }): TxRequest {
   if (p.tokensIn <= 0n) throw new RangeError("tokens_in must be positive");
   return {
     kind: "sell",
     receiverId: p.contractId,
     actions: [
+      ...(p.settleFirst ? [settleAction()] : []),
       call("sell", { tokens_in: p.tokensIn.toString(), min_near_out: p.minNearOut.toString() }, GAS.sell, ONE_YOCTO),
     ],
     label: p.label,
@@ -98,13 +118,17 @@ export function buildWithdrawTx(contractId: string, caps: Capabilities): TxReque
   };
 }
 
+function settleAction(): FunctionCallAction {
+  return call("settle_round", {}, GAS.settle, 0n);
+}
+
 /** Gate 2 — `settle_round()`, permissionless, no deposit. */
 export function buildSettleTx(contractId: string, caps: Capabilities, roundId: bigint): TxRequest {
   if (!caps.settleRound) throw new FeatureUnavailableError("settle_round");
   return {
     kind: "settle",
     receiverId: contractId,
-    actions: [call("settle_round", {}, GAS.settle, 0n)],
+    actions: [settleAction()],
     label: `Settle round #${roundId}`,
     meta: { roundId },
   };
@@ -119,6 +143,102 @@ export function buildClaimTx(contractId: string, caps: Capabilities, roundId: bi
     actions: [call("claim_reward", { round_id: roundId.toString() }, GAS.claim, 0n)],
     label: `Claim round #${roundId} prize`,
     meta: { roundId },
+  };
+}
+
+/**
+ * The round's own winner settles AND claims in one transaction (two actions, run in order: if the
+ * claim fails, the settle reverts with it). Used by auto mode.
+ */
+export function buildSettleAndClaimTx(contractId: string, caps: Capabilities, roundId: bigint): TxRequest {
+  if (!caps.settleRound) throw new FeatureUnavailableError("settle_round");
+  if (!caps.claimReward) throw new FeatureUnavailableError("claim_reward");
+  return {
+    kind: "claim",
+    receiverId: contractId,
+    actions: [settleAction(), call("claim_reward", { round_id: roundId.toString() }, GAS.claim, 0n)],
+    label: `Settle round #${roundId} & claim your prize`,
+    meta: { roundId },
+  };
+}
+
+// ---------- session key (auto mode) ----------
+
+/**
+ * The only methods the session key may call. None takes a deposit (a function-call key cannot
+ * attach one): it can settle, claim, and trade the owner's play balance / tokens — never send NEAR
+ * or LAST to anyone else. Methods the deployed contract lacks are simply never called.
+ */
+export const SESSION_METHODS = ["settle_round", "claim_reward", "buy_from_balance", "sell_to_balance"] as const;
+/** Lifetime gas budget of the session key: 0.25 NEAR. */
+export const SESSION_ALLOWANCE = 250_000_000_000_000_000_000_000n;
+
+/** v0.4 — put NEAR in the play balance (wallet signature; registers storage first if needed). */
+export function buildDepositTx(p: { contractId: string; amount: bigint; storageDeposit?: bigint | null; label: string }): TxRequest {
+  if (p.amount <= 0n) throw new RangeError("deposit must be positive");
+  const actions: FunctionCallAction[] = [];
+  if (p.storageDeposit != null) actions.push(storageDepositAction(p.storageDeposit));
+  actions.push(call("deposit_balance", {}, GAS.buy, p.amount));
+  return { kind: "deposit", receiverId: p.contractId, actions, label: p.label };
+}
+
+/** v0.4 — buy from the play balance: no deposit, so the session key signs it (no popup). */
+export function buildBuyFromBalanceTx(p: { contractId: string; amount: bigint; minTokensOut: bigint; settleFirst?: boolean; label: string }): TxRequest {
+  if (p.amount <= 0n) throw new RangeError("buy amount must be positive");
+  return {
+    kind: "buy",
+    receiverId: p.contractId,
+    actions: [
+      ...(p.settleFirst ? [settleAction()] : []),
+      call("buy_from_balance", { amount: p.amount.toString(), min_tokens_out: p.minTokensOut.toString() }, GAS.buy, 0n),
+    ],
+    label: p.label,
+    auto: true,
+  };
+}
+
+/** v0.4 — sell into the play balance without the 1 yocto (session key). */
+export function buildSellToBalanceTx(p: { contractId: string; tokensIn: bigint; minNearOut: bigint; settleFirst?: boolean; label: string }): TxRequest {
+  if (p.tokensIn <= 0n) throw new RangeError("tokens_in must be positive");
+  return {
+    kind: "sell",
+    receiverId: p.contractId,
+    actions: [
+      ...(p.settleFirst ? [settleAction()] : []),
+      call("sell_to_balance", { tokens_in: p.tokensIn.toString(), min_near_out: p.minNearOut.toString() }, GAS.sell, 0n),
+    ],
+    label: p.label,
+    auto: true,
+  };
+}
+
+/** Adds the limited session key to the user's own account. Signed once in the wallet. */
+export function buildAddSessionKeyTx(accountId: string, contractId: string, publicKey: string): TxRequest {
+  return {
+    kind: "session",
+    receiverId: accountId,
+    actions: [
+      {
+        type: "AddKey",
+        params: {
+          publicKey,
+          accessKey: {
+            permission: { receiverId: contractId, allowance: SESSION_ALLOWANCE.toString(), methodNames: [...SESSION_METHODS] },
+          },
+        },
+      },
+    ],
+    label: "Enable instant trading",
+  };
+}
+
+/** Removes the session key from the user's account (wallet signature). */
+export function buildDeleteSessionKeyTx(accountId: string, publicKey: string): TxRequest {
+  return {
+    kind: "session",
+    receiverId: accountId,
+    actions: [{ type: "DeleteKey", params: { publicKey } }],
+    label: "Turn off instant trading",
   };
 }
 
@@ -209,5 +329,9 @@ export function describeResult(kind: TxKind, value: unknown): string | null {
       return "NEAR credit paid to your wallet.";
     case "register":
       return "Storage registered.";
+    case "session":
+      return null;
+    case "deposit":
+      return "Added to your play balance — trades now need no wallet popup.";
   }
 }

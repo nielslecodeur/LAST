@@ -11,20 +11,20 @@ export function CreditPanel() {
   const inFlight = account?.creditInFlight ?? null;
   const can = capabilities.withdrawNearCredit;
 
-  let label = "Withdraw NEAR";
+  let label = "Withdraw to my wallet";
   if (!deployed) label = deployment === "checking" ? "Connecting to contract…" : "Contract not deployed";
   else if (!can) label = "Withdraw — pending Gate 2";
   else if (!accountId) label = "Connect wallet";
   else if (walletError) label = "Wrong network";
   else if (inFlight !== null && inFlight > 0n) label = "Withdrawal in flight…";
-  else if (available === null || available === 0n) label = "No credit to withdraw";
+  else if (available === null || available === 0n) label = "Nothing to withdraw";
   else if (isBusy(tx) && tx.kind === "withdraw") label = "Confirm in wallet…";
 
   const disabled = !deployed || !can || !accountId || !!walletError || !available || available === 0n || (inFlight ?? 0n) > 0n || isBusy(tx);
 
   return (
-    <Card title="Withdraw NEAR">
-      <Row label="Credit available" strong value={available === null ? "—" : `${formatNear(available, 6)} NEAR`} />
+    <Card title="Play balance · withdraw">
+      <Row label="Available (play balance)" strong value={available === null ? "—" : `${formatNear(available, 6)} NEAR`} />
       <Row label="In flight" value={inFlight === null ? "—" : `${formatNear(inFlight, 6)} NEAR`} />
       <Button variant="secondary" className="mt-3 w-full" disabled={disabled} onClick={() => reader && void run(buildWithdrawTx(reader.contractId, capabilities))}>
         {label}

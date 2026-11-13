@@ -63,6 +63,7 @@ export function capabilitiesFromExports(exports: Set<string>): Capabilities {
     claimReward: exports.has("claim_reward"),
     withdrawNearCredit: exports.has("withdraw_near_credit"),
     getRound: exports.has("get_round"),
+    playBalance: exports.has("deposit_balance") && exports.has("buy_from_balance") && exports.has("sell_to_balance"),
     source: "wasm-exports",
   };
 }

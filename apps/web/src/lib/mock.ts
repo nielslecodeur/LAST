@@ -192,7 +192,7 @@ export class SimulatedChain implements LastReader, LastWriter {
 
   async getCapabilities(): Promise<Capabilities> {
     const g = this.gate2;
-    return { settleRound: g, claimReward: g, withdrawNearCredit: g, getRound: g, source: "simulated" };
+    return { settleRound: g, claimReward: g, withdrawNearCredit: g, getRound: g, playBalance: g, source: "simulated" };
   }
 
   // ---------------- writer ----------------
@@ -214,6 +214,17 @@ export class SimulatedChain implements LastReader, LastWriter {
     return () => this.listeners.delete(cb);
   }
 
+  /** Several transactions approved at once (one wallet popup); each one is atomic on its own. */
+  async sendMany(txs: TxRequest[]): Promise<ExecutionOutcomeLike[]> {
+    const out: ExecutionOutcomeLike[] = [];
+    for (const tx of txs) {
+      const o = await this.send(tx);
+      out.push(o);
+      if (typeof o.status === "object" && o.status !== null && "Failure" in o.status) break;
+    }
+    return out;
+  }
+
   async send(tx: TxRequest): Promise<ExecutionOutcomeLike> {
     const signer = this.connected ?? panic("Not signed in");
     await new Promise((r) => setTimeout(r, this.latencyMs)); // simulated wallet + block latency
@@ -222,6 +233,7 @@ export class SimulatedChain implements LastReader, LastWriter {
     try {
       let value: unknown = null;
       for (const a of tx.actions) {
+        if (a.type !== "FunctionCall") continue; // AddKey/DeleteKey: no simulated keys
         const deposit = BigInt(a.params.deposit);
         const bal = this.near.get(signer) ?? 0n;
         if (bal < deposit) panic("NotEnoughBalance");
@@ -254,6 +266,30 @@ export class SimulatedChain implements LastReader, LastWriter {
         return this.sell(who, BigInt(String(args.tokens_in)), BigInt(String(args.min_near_out)));
       case "withdraw_near_credit":
         return this.withdraw(who, deposit);
+      case "deposit_balance": {
+        if (!this.gate2) panic("MethodNotFound");
+        if (deposit === 0n) panic("ERR_ZERO_DEPOSIT");
+        if (!this.balances.has(who)) panic("ERR_NOT_REGISTERED");
+        const c = this.credits.get(who) ?? { available: 0n, inFlight: 0n };
+        c.available += deposit;
+        this.credits.set(who, c);
+        return { amount: deposit.toString(), credit_available: c.available.toString() };
+      }
+      case "buy_from_balance": {
+        if (!this.gate2) panic("MethodNotFound");
+        if (deposit !== 0n) panic("Method buy_from_balance doesn't accept deposit");
+        const amount = BigInt(String(args.amount));
+        if (amount === 0n) panic("ERR_ZERO_AMOUNT");
+        const c = this.credits.get(who) ?? { available: 0n, inFlight: 0n };
+        if (c.available < amount) panic("ERR_INSUFFICIENT_BALANCE_NEAR");
+        c.available -= amount;
+        this.credits.set(who, c);
+        return this.buy(who, amount, BigInt(String(args.min_tokens_out)));
+      }
+      case "sell_to_balance":
+        if (!this.gate2) panic("MethodNotFound");
+        if (deposit !== 0n) panic("Method sell_to_balance doesn't accept deposit");
+        return this.sell(who, BigInt(String(args.tokens_in)), BigInt(String(args.min_near_out)));
       case "settle_round":
         return this.settle(who);
       case "claim_reward":

@@ -35,6 +35,12 @@ export function verifyOnChain(kind: TxKind, meta: TxMeta, before: ChainSnapshot,
       return after.market && before.market && after.market.sellCount > before.market.sellCount ? { status: "confirmed" } : lag;
     case "register":
       return after.account?.registered ? { status: "confirmed" } : lag;
+    case "deposit":
+      return after.account && before.account && after.account.creditAvailable > before.account.creditAvailable ? { status: "confirmed" } : lag;
+    case "session":
+      // Key registration lives on the user account, not in contract state: the outcome is the proof
+      // (the hook re-reads the key with view_access_key right after).
+      return { status: "confirmed" };
     case "settle": {
       const id = meta.roundId;
       const settled = after.game?.lastSettledRoundId ?? null;

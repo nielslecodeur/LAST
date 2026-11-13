@@ -78,7 +78,7 @@ describe("SIMULATED, Gate 1 contract (Gate 2 not available)", () => {
 });
 
 describe("SIMULATED, Gate 2 available", () => {
-  it("expired round offers Settle and blocks trading", async () => {
+  it("expired round offers Settle, and a buy settles it first", async () => {
     let now = 1_000n * 10n ** 9n;
     const sim = new SimulatedChain({ gate2: true, now: () => now });
     await sim.connect();
@@ -88,7 +88,9 @@ describe("SIMULATED, Gate 2 available", () => {
     await simulated(sim);
     expect(screen.getAllByText(/EXPIRED/).length).toBeGreaterThan(0);
     expect(button(/Settle round #1/).disabled).toBe(false);
-    expect(button(/Round over — settle first/).disabled).toBe(true);
+    // Trading is not blocked any more: the next buy settles the round in the same transaction.
+    expect(screen.queryByRole("button", { name: /Round over — settle first/ })).toBeNull();
+    expect(screen.getByText(/This transaction first settles it/)).toBeTruthy();
   });
 });
 

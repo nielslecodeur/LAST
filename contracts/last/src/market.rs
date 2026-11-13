@@ -119,9 +119,45 @@ impl LastContract {
     /// one state transition (SPEC §1.4).
     #[payable]
     pub fn buy(&mut self, min_tokens_out: U128) -> BuyResult {
-        let buyer = env::predecessor_account_id();
-        let me = env::current_account_id();
         let gross = env::attached_deposit().as_yoctonear();
+        require!(gross > 0, "ERR_ZERO_DEPOSIT");
+        self.internal_buy(env::predecessor_account_id(), gross, min_tokens_out.0)
+    }
+
+    /// Sell LAST from the caller's own balance. Proceeds become a withdrawable NEAR credit; no NEAR
+    /// is sent here (SPEC §1.5). Never touches leader or deadline.
+    #[payable]
+    pub fn sell(&mut self, tokens_in: U128, min_near_out: U128) -> SellResult {
+        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
+        self.internal_sell(env::predecessor_account_id(), tokens_in.0, min_near_out.0)
+    }
+
+    /// Same integer math as `buy` against current reserves. Never panics on small amounts.
+    pub fn quote_buy(&self, gross_near: U128) -> BuyQuoteView {
+        let q = calc_buy(self.ledger.market_near_reserve, self.market_inventory(), gross_near.0);
+        BuyQuoteView {
+            tokens_out: U128(q.tokens_out),
+            fee: U128(q.fee),
+            net_near: U128(q.net_near),
+            eligible: gross_near.0 >= self.min_eligible_buy,
+        }
+    }
+
+    pub fn quote_sell(&self, tokens_in: U128) -> SellQuoteView {
+        let q = calc_sell(self.ledger.market_near_reserve, self.market_inventory(), tokens_in.0);
+        SellQuoteView {
+            gross_near_out: U128(q.gross_near_out),
+            fee: U128(q.fee),
+            payout: U128(q.payout),
+        }
+    }
+}
+
+impl LastContract {
+    /// Shared buy path: `buy` (attached NEAR) and `buy_from_balance` (play balance). The `gross`
+    /// NEAR is already held by the contract and no longer counted as an obligation when this runs.
+    pub(crate) fn internal_buy(&mut self, buyer: AccountId, gross: u128, min_tokens_out: u128) -> BuyResult {
+        let me = env::current_account_id();
         let now = env::block_timestamp();
 
         require!(gross > 0, "ERR_ZERO_DEPOSIT");
@@ -133,7 +169,7 @@ impl LastContract {
         let y = self.market_inventory();
         let q = calc_buy(self.ledger.market_near_reserve, y, gross);
         require!(q.tokens_out > 0, "ERR_ZERO_OUTPUT");
-        require!(q.tokens_out >= min_tokens_out.0, "ERR_SLIPPAGE");
+        require!(q.tokens_out >= min_tokens_out, "ERR_SLIPPAGE");
         require!(q.tokens_out < y, "ERR_INSUFFICIENT_LIQUIDITY");
 
         // Decide eligibility and round start *before* allocating this trade's fee (SPEC §1.3).
@@ -175,14 +211,9 @@ impl LastContract {
         }
     }
 
-    /// Sell LAST from the caller's own balance. Proceeds become a withdrawable NEAR credit; no NEAR
-    /// is sent here (SPEC §1.5). Never touches leader or deadline.
-    #[payable]
-    pub fn sell(&mut self, tokens_in: U128, min_near_out: U128) -> SellResult {
-        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
-        let seller = env::predecessor_account_id();
+    /// Shared sell path: `sell` (1 yocto, wallet) and `sell_to_balance` (session key).
+    pub(crate) fn internal_sell(&mut self, seller: AccountId, tokens_in: u128, min_near_out: u128) -> SellResult {
         let me = env::current_account_id();
-        let tokens_in = tokens_in.0;
 
         require!(seller != me, "ERR_FORBIDDEN");
         require!(tokens_in > 0, "ERR_ZERO_AMOUNT");
@@ -196,7 +227,7 @@ impl LastContract {
         let x = self.ledger.market_near_reserve;
         let q = calc_sell(x, self.market_inventory(), tokens_in);
         require!(q.payout > 0, "ERR_ZERO_OUTPUT");
-        require!(q.payout >= min_near_out.0, "ERR_SLIPPAGE");
+        require!(q.payout >= min_near_out, "ERR_SLIPPAGE");
         require!(q.gross_near_out < x, "ERR_INSUFFICIENT_LIQUIDITY");
 
         self.ledger.market_near_reserve = sub(x, q.gross_near_out);
@@ -215,26 +246,6 @@ impl LastContract {
             fee: U128(q.fee),
             payout: U128(q.payout),
             credit_available: U128(credit.available),
-        }
-    }
-
-    /// Same integer math as `buy` against current reserves. Never panics on small amounts.
-    pub fn quote_buy(&self, gross_near: U128) -> BuyQuoteView {
-        let q = calc_buy(self.ledger.market_near_reserve, self.market_inventory(), gross_near.0);
-        BuyQuoteView {
-            tokens_out: U128(q.tokens_out),
-            fee: U128(q.fee),
-            net_near: U128(q.net_near),
-            eligible: gross_near.0 >= self.min_eligible_buy,
-        }
-    }
-
-    pub fn quote_sell(&self, tokens_in: U128) -> SellQuoteView {
-        let q = calc_sell(self.ledger.market_near_reserve, self.market_inventory(), tokens_in.0);
-        SellQuoteView {
-            gross_near_out: U128(q.gross_near_out),
-            fee: U128(q.fee),
-            payout: U128(q.payout),
         }
     }
 }

@@ -19,7 +19,7 @@ const PHASE_BADGE: Record<DisplayPhase, { tone: "acid" | "heat" | "gold" | "mute
 export const PREFILL_BUY_EVENT = "last:prefill-buy";
 
 export function Hero() {
-  const { game, market, clock, accountId, deployed, deployment, simulated, config, rounds } = useLast();
+  const { game, market, clock, accountId, deployed, deployment, simulated, config, rounds, capabilities } = useLast();
   const { remaining, phase } = useCountdown(game, clock);
 
   // Crown change / settlement → animation + announcement (only on confirmed reads).
@@ -207,7 +207,7 @@ export function Hero() {
           </div>
           <div className="mt-0.5 text-xs text-mute">Win = timer expires on-chain → anyone settles → winner claims. Your browser's 00:00 alone never decides.</div>
         </div>
-        <Button className="shrink-0" onClick={stealTheCrown} disabled={!deployed || phase === "EXPIRED" || minBuy === null}>
+        <Button className="shrink-0" onClick={stealTheCrown} disabled={!deployed || (phase === "EXPIRED" && !capabilities.settleRound) || minBuy === null}>
           <CrownIcon className="h-4 w-4" /> Steal the crown
         </Button>
       </div>
@@ -230,7 +230,7 @@ function phaseHint(phase: DisplayPhase | null, youLead: boolean, minBuy: bigint 
     case "EXPIRED":
       return youLead
         ? `You won round #${game?.roundId ?? ""} on-chain. The prize becomes claimable once the round is settled.`
-        : `Round #${game?.roundId ?? ""} is over on-chain. Trading is paused until anyone settles it; the winner then claims the jackpot.`;
+        : `Round #${game?.roundId ?? ""} is over on-chain. The next buy settles it in the same transaction (or anyone can settle it); the winner then gets the jackpot.`;
     case "IDLE":
       return `No active round. The first buy of at least ${min} starts round #${game?.roundId ?? ""} and takes the crown.`;
     default:

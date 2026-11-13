@@ -34,7 +34,8 @@ export function TxToast() {
 
   if (tx.phase === "idle") return null;
   const busy = tx.phase === "signing" || tx.phase === "pending";
-  const title = simulated ? TEXT[tx.phase].replace(" on-chain", "") : TEXT[tx.phase];
+  const text = tx.auto && tx.phase === "signing" ? "Auto mode — signing with your session key…" : TEXT[tx.phase];
+  const title = simulated ? text.replace(" on-chain", "") : text;
 
   return (
     <div role="status" aria-live="polite" className="fixed inset-x-4 bottom-4 z-50 sm:inset-x-auto sm:right-6 sm:w-96">

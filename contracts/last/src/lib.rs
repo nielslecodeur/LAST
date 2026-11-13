@@ -4,6 +4,7 @@
 //! Interface: docs/CONTRACT_API.md. Engineering contract: docs/SPEC_V2.md.
 
 pub mod accounting;
+pub mod balance;
 pub mod events;
 pub mod game;
 pub mod market;

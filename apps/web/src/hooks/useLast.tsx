@@ -15,12 +15,22 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { ReactNode } from "react";
 import { type AppConfig, walletNetworkProblem } from "../config";
 import { type ChainClock, mergeClock, sampleClock } from "../lib/countdown";
+import { AUTO_SETTLE_GRACE_MS, AUTO_SETTLE_JITTER_MS, nextAutoAction } from "../lib/autoplay";
 import { classifyError } from "../lib/errors";
-import { recentRoundIds } from "../lib/game";
+import { claimableFor, recentRoundIds } from "../lib/game";
 import { type PendingTxMarker, clearPending, markPending, takeInterrupted } from "../lib/pendingTx";
 import type { LastReader } from "../lib/reader";
 import { LiveLastReader } from "../lib/reader";
-import { type TxRequest, describeResult, interpretOutcome } from "../lib/transactions";
+import { type SessionManager, type SessionStatus, isSessionKeyGone } from "../lib/sessionKey";
+import {
+  type TxRequest,
+  buildClaimTx,
+  buildDepositTx,
+  buildSettleAndClaimTx,
+  buildSettleTx,
+  describeResult,
+  interpretOutcome,
+} from "../lib/transactions";
 import { IDLE_TX, type TxState, isBusy, txReducer } from "../lib/txMachine";
 import { type ChainSnapshot, VERIFY_ATTEMPTS, VERIFY_INTERVAL_MS, verifyOnChain } from "../lib/txVerify";
 import {
@@ -70,6 +80,9 @@ export interface LastData {
   clock: ChainClock | null;
 }
 
+/** Auto mode (session key): settle + claim without wallet popups. */
+export type AutoMode = SessionStatus | { state: "checking" } | { state: "none" };
+
 export interface LastContextValue extends LastData {
   config: AppConfig;
   reader: LastReader | null;
@@ -86,13 +99,21 @@ export interface LastContextValue extends LastData {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   tx: TxState;
-  run(tx: TxRequest): Promise<boolean>;
+  /** One transaction, or several approved in ONE wallet popup (status/verify follow the last one). */
+  run(tx: TxRequest | TxRequest[]): Promise<boolean>;
   resetTx(): void;
   sessionTxs: SessionTx[];
   /** A transaction was waiting for the wallet when the page was last reloaded/closed. */
   interrupted: PendingTxMarker | null;
   dismissInterrupted(): void;
   refresh(opts?: { light?: boolean }): Promise<ChainSnapshot | null>;
+  autoMode: AutoMode;
+  /** One wallet signature: adds the limited session key (+ puts `deposit` in the play balance). */
+  enableAuto(deposit?: bigint): Promise<void>;
+  /** Forgets the key here and asks the wallet to delete it on-chain. */
+  disableAuto(): Promise<void>;
+  /** Local time at which auto mode will settle an expired round won by someone else (null = none). */
+  autoSettleAtMs: number | null;
 }
 
 const Ctx = createContext<LastContextValue | null>(null);
@@ -130,11 +151,16 @@ export function LastProvider(props: {
   config: AppConfig;
   reader: LastReader | null;
   writer: LastWriter | null;
+  /** Auto mode; null/absent = not offered. */
+  session?: SessionManager | null;
   children: ReactNode;
   pollMs?: number;
   verifyIntervalMs?: number;
+  /** Auto mode: how long a non-winner waits before settling (tests). Default 20 s + jitter. */
+  autoSettleGraceMs?: number;
 }) {
   const { config, reader, writer } = props;
+  const session = props.session ?? null;
   const pollMs = props.pollMs ?? POLL_MS;
   const verifyIntervalMs = props.verifyIntervalMs ?? VERIFY_INTERVAL_MS;
   const [deployment, setDeployment] = useState<Deployment>(() =>
@@ -149,6 +175,8 @@ export function LastProvider(props: {
   const [tx, dispatch] = useReducer(txReducer, IDLE_TX);
   const [sessionTxs, setSessionTxs] = useState<SessionTx[]>([]);
   const [interrupted, setInterrupted] = useState<PendingTxMarker | null>(() => takeInterrupted());
+  const [autoMode, setAutoMode] = useState<AutoMode>({ state: "none" });
+  const [autoTick, setAutoTick] = useState(0);
   const txSeq = useRef(0);
   const accountRef = useRef<string | null>(null);
   accountRef.current = accountId;
@@ -381,8 +409,11 @@ export function LastProvider(props: {
   txRef.current = tx;
 
   const run = useCallback(
-    async (req: TxRequest): Promise<boolean> => {
-      if (!writer || !deployed || isBusy(txRef.current)) return false;
+    async (input: TxRequest | TxRequest[]): Promise<boolean> => {
+      const batch = Array.isArray(input) ? input : [input];
+      const req = batch[batch.length - 1];
+      if (!req || !writer || !deployed || isBusy(txRef.current)) return false;
+      if (batch.length > 1 && batch.some((t) => t.auto)) return false; // batches go through the wallet
       if (liveWallet && accountRef.current && walletNetworkProblem(accountRef.current)) return false;
       const id = ++txSeq.current;
       const log = (patch: Partial<SessionTx>) =>
@@ -394,14 +425,26 @@ export function LastProvider(props: {
           return list.map((t) => (t.id === id ? { ...t, ...patch } : t));
         });
 
+      const auto = req.auto === true;
+      const signer = accountRef.current;
+      if (auto && (!session || !signer)) return false;
       const before: ChainSnapshot = dataRef.current;
-      dispatch({ type: "SIGN", kind: req.kind, label: req.label });
+      dispatch({ type: "SIGN", kind: req.kind, label: req.label, auto });
       log({});
-      markPending({ label: req.label, accountId: accountRef.current, at: Date.now() });
+      if (!auto) markPending({ label: req.label, accountId: accountRef.current, at: Date.now() });
       try {
-        const outcome = await writer.send(req);
-        clearPending();
-        const res = interpretOutcome(outcome, req.kind);
+        const outcomes = auto ? [await session!.send(signer!, req)] : batch.length > 1 ? await writer.sendMany(batch) : [await writer.send(req)];
+        if (!auto) clearPending();
+        // The first failing transaction of a batch is the one reported.
+        const results = outcomes.map((o, i) => interpretOutcome(o, batch[i]?.kind ?? req.kind));
+        const res = results.find((r) => !r.ok) ?? results[results.length - 1] ?? interpretOutcome({}, req.kind);
+        if (res.ok && outcomes.length < batch.length) {
+          const error = classifyError("The wallet did not return every transaction of the batch.");
+          dispatch({ type: "OUTCOME_FAILED", hash: res.hash, error });
+          log({ phase: "failed", hash: res.hash, error: error.message });
+          await refresh();
+          return false;
+        }
         if (!res.ok) {
           const error = classifyError(res.code ?? res.message);
           dispatch({ type: "OUTCOME_FAILED", hash: res.hash, error });
@@ -432,15 +475,130 @@ export function LastProvider(props: {
         log({ phase: "unresolved", note: verdict.note });
         return false;
       } catch (e) {
-        clearPending();
+        if (!auto) clearPending();
         const error = classifyError(e);
         dispatch({ type: "THROWN", error });
         log({ phase: error.kind === "rejected" ? "rejected" : "failed", error: error.message });
+        if (auto && isSessionKeyGone(e)) setAutoMode({ state: "off" }); // key deleted or gas budget spent
         return false;
       }
     },
-    [writer, deployed, refresh, verifyIntervalMs, liveWallet],
+    [writer, session, deployed, refresh, verifyIntervalMs, liveWallet],
   );
+
+  // ---- auto mode ----
+  const checkAuto = useCallback(
+    async (attempts = 1): Promise<void> => {
+      const who = accountRef.current;
+      if (!session || !who) return setAutoMode({ state: "none" });
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const st = await session.status(who);
+          if (accountRef.current !== who) return;
+          setAutoMode(st);
+          if (st.state !== "off" || i === attempts - 1) return;
+        } catch {
+          // RPC hiccup: keep the current state, never discard a key on a network error
+          if (i === attempts - 1) return;
+        }
+        await sleep(verifyIntervalMs);
+      }
+    },
+    [session, verifyIntervalMs],
+  );
+
+  useEffect(() => {
+    if (!session || !accountId) {
+      setAutoMode({ state: "none" });
+      return;
+    }
+    setAutoMode({ state: "checking" });
+    void checkAuto();
+  }, [session, accountId, checkAuto]);
+
+  const enableAuto = useCallback(
+    async (deposit: bigint = 0n) => {
+      const who = accountRef.current;
+      if (!session || !who || !reader || isBusy(txRef.current)) return;
+      const addKey = await session.prepareEnable(who);
+      const txs: TxRequest[] = addKey ? [addKey] : [];
+      if (deposit > 0n && capabilities.playBalance) {
+        const d = dataRef.current;
+        const needsStorage = d.account !== null && !d.account.registered;
+        txs.push(
+          buildDepositTx({
+            contractId: reader.contractId,
+            amount: deposit,
+            storageDeposit: needsStorage ? (d.storage?.min ?? null) : null,
+            label: addKey ? "Enable instant trading + fill play balance" : "Fill play balance",
+          }),
+        );
+      }
+      if (txs.length > 0) {
+        const ok = await run(txs);
+        if (!ok && addKey) {
+          // Keep the local key only if its AddKey landed (e.g. the deposit alone failed).
+          const st = await session.status(who).catch(() => ({ state: "off" as const }));
+          if (st.state !== "on") await session.discard(who);
+          return checkAuto();
+        }
+      }
+      await checkAuto(6); // view_access_key reads final state: allow a few blocks
+    },
+    [session, reader, capabilities.playBalance, run, checkAuto],
+  );
+
+  const disableAuto = useCallback(async () => {
+    const who = accountRef.current;
+    if (!session || !who || isBusy(txRef.current)) return;
+    const req = await session.prepareDisable(who); // forgotten locally even if the wallet step is rejected
+    setAutoMode({ state: "off" });
+    if (req) await run(req);
+  }, [session, run]);
+
+  // Runner: one auto action at a time, each tried once per page session.
+  const autoTried = useRef(new Set<string>());
+  const expiredSeen = useRef<{ roundId: bigint; atMs: number } | null>(null);
+  const jitter = useRef(Math.floor(Math.random() * AUTO_SETTLE_JITTER_MS));
+  const game = data.game;
+  if (game?.status === "EXPIRED") {
+    if (expiredSeen.current?.roundId !== game.roundId) expiredSeen.current = { roundId: game.roundId, atMs: Date.now() };
+  } else if (game) {
+    expiredSeen.current = null;
+  }
+  const graceMs = props.autoSettleGraceMs ?? AUTO_SETTLE_GRACE_MS + jitter.current;
+  const autoOn = autoMode.state === "on" && !walletError && deployed;
+  const autoSettleAtMs =
+    autoOn && game?.status === "EXPIRED" && game.leader !== accountId && expiredSeen.current ? expiredSeen.current.atMs + graceMs : null;
+
+  useEffect(() => {
+    if (!autoOn || !reader || !accountId || isBusy(tx)) return;
+    const act = nextAutoAction({
+      me: accountId,
+      game: dataRef.current.game,
+      caps: capabilities,
+      claimable: claimableFor(dataRef.current.account, dataRef.current.rounds, accountId),
+      expiredSeenAtMs: expiredSeen.current?.atMs ?? null,
+      nowMs: Date.now(),
+      graceMs,
+      tried: autoTried.current,
+    });
+    if (!act) {
+      // Nothing to do yet: wake up when the grace period ends (polls also re-run this effect).
+      if (autoSettleAtMs === null) return;
+      const t = setTimeout(() => setAutoTick((n) => n + 1), Math.max(250, autoSettleAtMs - Date.now()));
+      return () => clearTimeout(t);
+    }
+    autoTried.current.add(act.key);
+    const id = reader.contractId;
+    const req =
+      act.type === "settle_claim"
+        ? buildSettleAndClaimTx(id, capabilities, act.roundId)
+        : act.type === "settle"
+          ? buildSettleTx(id, capabilities, act.roundId)
+          : buildClaimTx(id, capabilities, act.roundId);
+    void run({ ...req, auto: true, label: `Auto · ${req.label}` });
+  }, [autoOn, reader, accountId, tx, data, capabilities, graceMs, autoSettleAtMs, autoTick, run]);
 
   const resetTx = useCallback(() => dispatch({ type: "RESET" }), []);
   const dismissInterrupted = useCallback(() => setInterrupted(null), []);
@@ -468,8 +626,12 @@ export function LastProvider(props: {
       interrupted,
       dismissInterrupted,
       refresh,
+      autoMode,
+      enableAuto,
+      disableAuto,
+      autoSettleAtMs,
     }),
-    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, walletError, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, interrupted, dismissInterrupted, refresh],
+    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, walletError, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, interrupted, dismissInterrupted, refresh, autoMode, enableAuto, disableAuto, autoSettleAtMs],
   );
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

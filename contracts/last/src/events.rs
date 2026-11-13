@@ -104,3 +104,13 @@ pub fn round_started(round_id: u64, seed: u128, started_at_ns: u64) {
         }),
     );
 }
+
+pub fn balance_deposit(account_id: &AccountId, amount: u128) {
+    emit(
+        "balance_deposit",
+        json!({
+            "account_id": account_id,
+            "amount": U128(amount),
+        }),
+    );
+}

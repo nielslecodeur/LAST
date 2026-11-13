@@ -11,7 +11,8 @@ import { Badge, Button, Card, CrownIcon, ExternalLink } from "./ui";
 const CLAIM_TONE: Record<ClaimStatus, "acid" | "gold" | "mute"> = { AVAILABLE: "acid", IN_FLIGHT: "gold", PAID: "mute" };
 
 export function RewardsPanel() {
-  const { game, account, rounds, accountId, capabilities, deployed, tx, run, reader, simulated, config, walletError } = useLast();
+  const { game, account, rounds, accountId, capabilities, deployed, tx, run, reader, simulated, config, walletError, autoMode, autoSettleAtMs } = useLast();
+  const autoOn = autoMode.state === "on";
   const settle = canSettle(game, capabilities);
   const mine = claimableFor(account, rounds, accountId);
   const paid = paidWinsOf(rounds, accountId);
@@ -51,6 +52,15 @@ export function RewardsPanel() {
                   : `Settle round #${game.roundId}`}
           </Button>
           {settle.reason && <p className="mt-2 text-xs text-gold">{settle.reason}</p>}
+          {settle.allowed && autoOn && (
+            <p className="mt-2 text-xs text-acid">
+              {game.leader === accountId
+                ? "Auto mode: settling and paying your prize now, no wallet popup."
+                : autoSettleAtMs !== null
+                  ? "Auto mode settles it in a few seconds if nobody else does."
+                  : "Auto mode is on."}
+            </p>
+          )}
         </div>
       )}
 
@@ -84,6 +94,7 @@ export function RewardsPanel() {
               </div>
             );
           })}
+          {autoOn && <p className="text-xs text-acid">Auto mode claims AVAILABLE prizes for you.</p>}
           {mine.some((m) => m.round?.claimStatus === "IN_FLIGHT") && (
             <p className="text-xs text-gold">IN_FLIGHT: the transfer was sent but the contract has not confirmed it yet. It is not a final payment.</p>
           )}

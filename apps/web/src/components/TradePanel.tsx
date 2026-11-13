@@ -13,10 +13,12 @@ import {
 } from "../lib/amounts";
 import { HIGH_IMPACT_BPS, buyPriceImpactBps, maxGasCost, sellPriceImpactBps } from "../lib/pricing";
 import { DEFAULT_SLIPPAGE_BPS, SLIPPAGE_PRESETS_BPS, applySlippage, parseSlippagePercent } from "../lib/slippage";
-import { GAS, buildBuyTx, buildSellTx } from "../lib/transactions";
+import { GAS, buildBuyFromBalanceTx, buildBuyTx, buildSellToBalanceTx, buildSellTx } from "../lib/transactions";
+import { shortAccount } from "../lib/game";
 import { isBusy } from "../lib/txMachine";
 import type { BuyQuote, SellQuote } from "../lib/types";
-import { BLOCKER_TEXT, type Blocker, checkBuy, checkSell } from "../lib/validation";
+import { BLOCKER_TEXT, type Blocker, GAS_RESERVE_YOCTO, checkBuy, checkSell } from "../lib/validation";
+import { InstantTradingCard } from "./InstantTrading";
 import type { Deployment } from "../hooks/useLast";
 
 /** While the contract is being probed, "not deployed" would be a false statement. */
@@ -33,6 +35,7 @@ export function TradePanel() {
   const [slippageBps, setSlippageBps] = useState<bigint>(DEFAULT_SLIPPAGE_BPS);
   const [prefill, setPrefill] = useState<{ value: string; n: number } | null>(null);
   const { account, nearBalance, accountId, walletError } = useLast();
+  const instant = useInstant();
 
   useEffect(() => {
     const onPrefill = (e: Event) => {
@@ -45,6 +48,7 @@ export function TradePanel() {
 
   return (
     <Card id="trade" title="Trade" aside={<SlippageControl value={slippageBps} onChange={setSlippageBps} />} className="h-full">
+      <InstantTradingCard />
       <div role="tablist" aria-label="Trade side" className="grid grid-cols-2 gap-1 rounded-xl bg-panel-2 p-1">
         {(["buy", "sell"] as const).map((s) => (
           <button
@@ -66,7 +70,11 @@ export function TradePanel() {
 
       {accountId && !walletError && (
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-          <Balance label="NEAR available" value={nearBalance === null ? null : formatNear(nearBalance, 4)} />
+          {instant ? (
+            <Balance label="⚡ Play balance" value={account ? formatNear(account.creditAvailable, 4) : null} />
+          ) : (
+            <Balance label="NEAR available" value={nearBalance === null ? null : formatNear(nearBalance, 4)} />
+          )}
           <Balance label="LAST balance" value={account ? formatLast(account.lastBalance) : null} />
         </div>
       )}
@@ -76,6 +84,12 @@ export function TradePanel() {
       </div>
     </Card>
   );
+}
+
+/** Instant trading is on AND the contract has the play balance AND the account is registered. */
+function useInstant(): boolean {
+  const { autoMode, capabilities, account } = useLast();
+  return autoMode.state === "on" && capabilities.playBalance && account?.registered === true;
 }
 
 function Balance({ label, value }: { label: string; value: string | null }) {
@@ -107,7 +121,10 @@ function ImpactRow({ bps }: { bps: bigint | null }) {
 // ------------------------------------------------------------------ Buy
 
 function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { value: string; n: number } | null }) {
-  const { reader, market, game, account, nearBalance, storage, accountId, walletError, deployed, deployment, tx, run, connect } = useLast();
+  const { reader, market, game, account, nearBalance, storage, accountId, walletError, deployed, deployment, tx, run, connect, capabilities } = useLast();
+  // Round over on-chain: the buy transaction settles it first (one signature, one transaction).
+  const settleFirst = game?.status === "EXPIRED" && capabilities.settleRound;
+  const instant = useInstant();
   const [input, setInput] = useState("");
   useEffect(() => {
     if (prefill) setInput(prefill.value);
@@ -122,25 +139,39 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
   const check = checkBuy({
     deployed,
     accountId,
-    status: game?.status ?? null,
+    // settle_round runs first in the same transaction, so the buy itself sees an IDLE game
+    status: settleFirst ? "IDLE" : (game?.status ?? null),
     gross,
     quote,
-    nearBalance,
+    // Instant: the buy is paid from the play balance, gas from the session key's budget.
+    nearBalance: instant ? (account ? account.creditAvailable + GAS_RESERVE_YOCTO : null) : nearBalance,
     account,
     storage,
     minEligibleBuy: market?.minEligibleBuy ?? null,
   });
-  const blocker = walletError ? "Wrong network" : check.blocker ? blockerText(check.blocker, deployment) : null;
+  const blocker = walletError
+    ? "Wrong network"
+    : check.blocker === "INSUFFICIENT_NEAR" && instant
+      ? "Play balance too low — top up above"
+      : check.blocker
+        ? blockerText(check.blocker, deployment)
+        : null;
   const minOut = quote ? applySlippage(quote.tokensOut, slippageBps) : null;
   const impact = quote && market ? buyPriceImpactBps(market.nearReserve, market.lastInventory, quote.netNear, quote.tokensOut) : null;
   const presets = useMemo(() => {
     const min = market?.minEligibleBuy;
     return min ? [min, min * 5n, min * 20n] : [];
   }, [market?.minEligibleBuy]);
-  const gas = check.storageDeposit !== null ? GAS.storageDeposit + GAS.buy : GAS.buy;
+  const gas = (check.storageDeposit !== null ? GAS.storageDeposit + GAS.buy : GAS.buy) + (settleFirst ? GAS.settle : 0n);
 
   const submit = async () => {
     if (!reader || !quote || minOut === null || gross === null || blocker || !accountId) return;
+    const what = `${settleFirst ? `Settle round #${game!.roundId} + ` : ""}${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`;
+    if (instant) {
+      const ok = await run(buildBuyFromBalanceTx({ contractId: reader.contractId, amount: gross, minTokensOut: minOut, settleFirst, label: `⚡ ${what}` }));
+      if (ok) setInput("");
+      return;
+    }
     // Polled data can be stale (RPC hiccup): re-read registration right before signing, so an
     // already registered account never sends a needless storage_deposit (Gate 4 finding).
     let storageDeposit = check.storageDeposit;
@@ -157,7 +188,8 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
         grossYocto: gross,
         minTokensOut: minOut,
         storageDeposit,
-        label: `${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
+        settleFirst,
+        label: `${settleFirst ? `Settle round #${game!.roundId} + ` : ""}${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`,
       }),
     );
     if (ok) setInput("");
@@ -197,6 +229,7 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
         {error && <p className="mt-2 text-sm text-heat">Quote failed: {error}</p>}
       </div>
 
+      {settleFirst && game && <SettleFirstNote roundId={game.roundId} leader={game.leader} action="buy" />}
       {(check.warnings.length > 0 || (impact !== null && impact >= HIGH_IMPACT_BPS)) && (
         <ul className="space-y-1 text-xs text-gold/90">
           {impact !== null && impact >= HIGH_IMPACT_BPS && <li>• High price impact ({formatBps(impact)}): the testnet pool is thin, a smaller buy gets a better price.</li>}
@@ -215,7 +248,13 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
         </Button>
       ) : (
         <Button className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "buy" ? "Confirm in wallet…" : blocker ?? (quote?.eligible ? "Buy LAST & steal the crown" : "Buy LAST")}
+          {isBusy(tx) && tx.kind === "buy"
+            ? instant
+              ? "Buying…"
+              : "Confirm in wallet…"
+            : instant && !blocker
+              ? `⚡ ${settleFirst ? "Settle & buy instantly" : quote?.eligible ? "Buy & steal the crown — instant" : "Buy instantly"}`
+            : (blocker ?? `${settleFirst ? "Settle & " : ""}${quote?.eligible ? (settleFirst ? "buy — open the next round" : "Buy LAST & steal the crown") : settleFirst ? "buy LAST" : "Buy LAST"}`)}
         </Button>
       )}
       <p className="text-[11px] leading-relaxed text-mute">
@@ -228,7 +267,9 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
 // ------------------------------------------------------------------ Sell
 
 function SellForm({ slippageBps }: { slippageBps: bigint }) {
-  const { reader, market, game, account, accountId, walletError, deployed, deployment, tx, run, connect } = useLast();
+  const { reader, market, game, account, accountId, walletError, deployed, deployment, tx, run, connect, capabilities } = useLast();
+  const settleFirst = game?.status === "EXPIRED" && capabilities.settleRound;
+  const instant = useInstant();
   const [input, setInput] = useState("");
   const tokensIn = tryParseUnits(input, LAST_DECIMALS);
   const invalid = input.trim() !== "" && tokensIn === null;
@@ -237,19 +278,33 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
   const marketKey = market ? `${market.nearReserve}:${market.lastInventory}` : "";
   const { quote, loading, error } = useQuote<SellQuote>(deployed && reader ? fetcher : null, tokensIn, marketKey);
 
-  const check = checkSell({ deployed, accountId, status: game?.status ?? null, tokensIn, quote, account });
+  const check = checkSell({ deployed, accountId, status: settleFirst ? "IDLE" : (game?.status ?? null), tokensIn, quote, account });
   const blocker = walletError ? "Wrong network" : check ? blockerText(check, deployment) : null;
   const minOut = quote ? applySlippage(quote.payout, slippageBps) : null;
   const impact = quote && market && tokensIn ? sellPriceImpactBps(market.nearReserve, market.lastInventory, tokensIn, quote.grossNearOut) : null;
 
   const submit = async () => {
     if (!reader || !quote || minOut === null || tokensIn === null || blocker) return;
+    if (instant) {
+      const ok = await run(
+        buildSellToBalanceTx({
+          contractId: reader.contractId,
+          tokensIn,
+          minNearOut: minOut,
+          settleFirst,
+          label: `⚡ ${settleFirst ? `Settle round #${game!.roundId} + ` : ""}Sell ${formatLast(tokensIn)} LAST → ${formatNear(quote.payout)} NEAR to play balance`,
+        }),
+      );
+      if (ok) setInput("");
+      return;
+    }
     const ok = await run(
       buildSellTx({
         contractId: reader.contractId,
         tokensIn,
         minNearOut: minOut,
-        label: `Sell ${formatLast(tokensIn)} LAST → ${formatNear(quote.payout)} NEAR credit`,
+        settleFirst,
+        label: `${settleFirst ? `Settle round #${game!.roundId} + ` : ""}Sell ${formatLast(tokensIn)} LAST → ${formatNear(quote.payout)} NEAR credit`,
       }),
     );
     if (ok) setInput("");
@@ -274,13 +329,14 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
         <ImpactRow bps={impact} />
         <Row label="NEAR credit (est.)" strong value={quote ? `${formatNear(quote.payout, 6)} NEAR` : "—"} />
         <Row label={`Min credit (${formatBps(slippageBps)} slippage)`} value={minOut !== null ? `${formatNear(minOut, 6)} NEAR` : "—"} />
-        <GasRow gas={GAS.sell} />
+        <GasRow gas={GAS.sell + (settleFirst ? GAS.settle : 0n)} />
         {error && <p className="mt-2 text-sm text-heat">Quote failed: {error}</p>}
       </div>
 
+      {settleFirst && game && <SettleFirstNote roundId={game.roundId} leader={game.leader} action="sell" />}
       <div className="rounded-lg border border-sky/30 bg-sky/5 px-3 py-2 text-xs leading-relaxed text-sky">
-        Selling never changes the leader or the timer. Proceeds become a <strong>withdrawable NEAR credit</strong> held by the contract —
-        withdrawing it is a separate signed transaction.
+        Selling never changes the leader or the timer. Proceeds go to your <strong>play balance</strong> (a withdrawable NEAR credit held by
+        the contract) — {instant ? "ready for your next instant buy; " : ""}withdrawing it is a separate signed transaction.
       </div>
 
       {!accountId && deployed ? (
@@ -289,7 +345,11 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
         </Button>
       ) : (
         <Button variant="secondary" className="w-full py-4 text-base" disabled={blocker !== null || isBusy(tx) || minOut === null} onClick={() => void submit()}>
-          {isBusy(tx) && tx.kind === "sell" ? "Confirm in wallet…" : blocker ?? "Sell LAST"}
+          {isBusy(tx) && tx.kind === "sell"
+            ? instant
+              ? "Selling…"
+              : "Confirm in wallet…"
+            : (blocker ?? (instant ? (settleFirst ? "⚡ Settle & sell instantly" : "⚡ Sell instantly") : settleFirst ? "Settle & sell LAST" : "Sell LAST"))}
         </Button>
       )}
     </div>
@@ -297,6 +357,17 @@ function SellForm({ slippageBps }: { slippageBps: bigint }) {
 }
 
 // ------------------------------------------------------------------ shared
+
+/** The round is over on-chain: this transaction settles it first. Nobody loses their win. */
+function SettleFirstNote({ roundId, leader, action }: { roundId: bigint; leader: string | null; action: "buy" | "sell" }) {
+  return (
+    <div className="rounded-lg border border-heat/40 bg-heat/10 px-3 py-2 text-xs leading-relaxed">
+      <strong className="text-heat">Round #{roundId.toString()} is over on-chain.</strong> This transaction first settles it
+      {leader ? <> (prize reserved for <span className="font-mono">{shortAccount(leader)}</span>)</> : null}, then runs your {action}
+      {action === "buy" ? " — an eligible buy opens the next round" : ""}. One signature; if someone settles first, it fails and nothing is spent but gas.
+    </div>
+  );
+}
 
 function AmountInput(props: {
   id: string;

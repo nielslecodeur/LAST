@@ -179,6 +179,8 @@ export interface Capabilities {
   claimReward: boolean;
   withdrawNearCredit: boolean;
   getRound: boolean;
+  /** v0.4 play balance: deposit_balance + buy_from_balance + sell_to_balance (trades without popups). */
+  playBalance: boolean;
   /** How it was determined. "unknown" = could not read the code: everything Gate 2 stays off. */
   source: "wasm-exports" | "simulated" | "unknown";
 }
@@ -190,6 +192,7 @@ export const NO_GATE2: Capabilities = {
   claimReward: false,
   withdrawNearCredit: false,
   getRound: false,
+  playBalance: false,
   source: "unknown",
 };
 

@@ -30,6 +30,7 @@ export const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   ERR_ALREADY_PAID: "This prize was already paid.",
   ERR_CLAIM_IN_FLIGHT: "A claim for this round is already in flight.",
   ERR_EMPTY_PRIZE: "This round's prize is empty.",
+  ERR_INSUFFICIENT_BALANCE_NEAR: "Your play balance is too low for this buy. Top it up first.",
 };
 
 export type ErrorKind = "rejected" | "contract" | "rpc" | "unavailable" | "unknown";
