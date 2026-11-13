@@ -1,0 +1,25 @@
+[package]
+name = "last-pot"
+description = "$LAST jackpot: holds the Nearly fee stream, tracks the last eligible buyer reported by the reporter, pays each round's winner automatically"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Same pinned versions as contracts/last (docs/SPEC_V2.md §2.1).
+[dependencies]
+near-sdk = "=5.30.1"
+
+[dev-dependencies]
+near-sdk = { version = "=5.30.1", features = ["unit-testing"] }
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
