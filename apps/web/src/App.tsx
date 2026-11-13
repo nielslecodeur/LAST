@@ -4,6 +4,7 @@ import { ActivityPanel } from "./components/ActivityPanel";
 import { CreditPanel } from "./components/CreditPanel";
 import { Hero } from "./components/Hero";
 import { HowItWorks } from "./components/HowItWorks";
+import { MainnetBanner } from "./components/MainnetBanner";
 import { MarketPanel } from "./components/MarketPanel";
 import { RewardsPanel } from "./components/RewardsPanel";
 import { StatusBanner } from "./components/StatusBanner";
@@ -16,6 +17,7 @@ export function App() {
   const { reader, simulated, deployed, config } = useLast();
   return (
     <div id="top" className="relative">
+      <MainnetBanner />
       <TopBar />
       <StatusBanner />
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:py-8">
