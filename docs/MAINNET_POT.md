@@ -1,6 +1,18 @@
 # $LAST on mainnet — Nearly launch + jackpot contract
 
-**Status:** code ready on `feat/mainnet-pot` (23 unit tests, WASM built with `--no-abi`, 153 KB). **Not deployed.** Every deploy and signature below needs explicit human approval.
+**Status:** contract **deployed on NEAR mainnet** as `pot.heavycat9990.near` (2026-11-13). Token not launched yet, reporter bot not started. Every signature below needs explicit human approval.
+
+## Current deployment
+
+| Item | Value |
+|---|---|
+| Contract account | `pot.heavycat9990.near` (created by `heavycat9990.near`, tx `2fGY11Bf5BNz7X1YViZ5f9toze5D72Rntyd2cYFygjzi`, funded 1.6 + 0.1 NEAR) |
+| Deploy + init tx | `EvahQHgSZbYfbmQricYQRgG9hWASvmY1s8wEWxsSx6Lg` (a first attempt `DivJYgkt…` failed with `LackBalanceForState`, nothing deployed) |
+| Source commit | `dde02e3` (`feat/mainnet-pot`) |
+| WASM | 152,901 bytes, sha256 `5f545e3972507e7d40a3e0836b8bf6bbe12d665d7d4fca2318a7d43b7ff6f8fe`, on-chain code hash `7R8M7jsAcY3AyPEr9FkWNRJLgtDpAEwuZmfkkawzUN8m` (matches) |
+| Owner / reporter | `heavycat9990.near` |
+| State after init | `IDLE`, round 1, pot 0.1442 NEAR (the extra funding above storage), `token_id` null |
+| Storage | 153,321 bytes = 1.5332 NEAR locked |
 
 ## Architecture
 
