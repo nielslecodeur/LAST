@@ -56,7 +56,7 @@ fn setup() -> PotContract {
     PotContract::new(InitConfig {
         owner_id: owner(),
         reporter_id: reporter(),
-        token_id: acc("last.nearlytrade.near"),
+        token_id: None,
         wrap_id: acc("wrap.near"),
         round_duration_ns: U64(DUR),
         min_eligible_buy: U128(MIN),
@@ -287,6 +287,32 @@ fn owner_rotates_reporter() {
     ctx(&owner(), 1, T0, BAL);
     c.set_reporter(acc("reporter2.near"));
     assert_eq!(c.get_config().reporter_id, acc("reporter2.near"));
+}
+
+#[test]
+fn owner_sets_token_once() {
+    let mut c = setup();
+    assert_eq!(c.get_config().token_id, None);
+    ctx(&owner(), 1, T0, BAL);
+    c.set_token_id(acc("last-abc123.nearlytrade.near"));
+    assert_eq!(c.get_config().token_id, Some(acc("last-abc123.nearlytrade.near")));
+}
+
+#[test]
+#[should_panic(expected = "ERR_TOKEN_ALREADY_SET")]
+fn token_cannot_be_changed() {
+    let mut c = setup();
+    ctx(&owner(), 1, T0, BAL);
+    c.set_token_id(acc("a.nearlytrade.near"));
+    c.set_token_id(acc("b.nearlytrade.near"));
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OWNER")]
+fn only_owner_sets_token() {
+    let mut c = setup();
+    ctx(&reporter(), 1, T0, BAL);
+    c.set_token_id(acc("a.nearlytrade.near"));
 }
 
 #[test]

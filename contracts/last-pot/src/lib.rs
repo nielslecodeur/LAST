@@ -37,8 +37,9 @@ enum StorageKey {
 pub struct InitConfig {
     pub owner_id: AccountId,
     pub reporter_id: AccountId,
-    /// The $LAST token contract on Nearly (informational, shown in views).
-    pub token_id: AccountId,
+    /// The $LAST token contract on Nearly (informational, shown in views). It usually does not
+    /// exist yet at deploy time: leave it null and set it once with `set_token_id`.
+    pub token_id: Option<AccountId>,
     /// `wrap.near` on mainnet: fees that arrive as wNEAR can be unwrapped into the pot.
     pub wrap_id: AccountId,
     pub round_duration_ns: U64,
@@ -89,7 +90,7 @@ pub struct SettledRound {
 pub struct PotContract {
     owner_id: AccountId,
     reporter_id: AccountId,
-    token_id: AccountId,
+    token_id: Option<AccountId>,
     wrap_id: AccountId,
     round_duration_ns: u64,
     min_eligible_buy: u128,
@@ -154,7 +155,7 @@ pub struct StateView {
 pub struct ConfigView {
     pub owner_id: AccountId,
     pub reporter_id: AccountId,
-    pub token_id: AccountId,
+    pub token_id: Option<AccountId>,
     pub wrap_id: AccountId,
     pub round_duration_ns: U64,
     pub min_eligible_buy: U128,
@@ -395,6 +396,16 @@ impl PotContract {
         require!(env::predecessor_account_id() == self.owner_id, "ERR_NOT_OWNER");
         emit("reporter_changed", json!({ "from": self.reporter_id, "to": reporter_id }));
         self.reporter_id = reporter_id;
+    }
+
+    /// Record the $LAST token address after the Nearly launch. Owner only, once.
+    #[payable]
+    pub fn set_token_id(&mut self, token_id: AccountId) {
+        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
+        require!(env::predecessor_account_id() == self.owner_id, "ERR_NOT_OWNER");
+        require!(self.token_id.is_none(), "ERR_TOKEN_ALREADY_SET");
+        emit("token_set", json!({ "token_id": token_id }));
+        self.token_id = Some(token_id);
     }
 
     // ------------------------------------------------------------------------------------------
