@@ -1,7 +1,7 @@
 # LAST — Last Buyer Wins
 
 > **NEAR Hackathon 2026 | Memecoins With Mechanics + Games With Real Economies**  
-> **Status: V2 design proposal, ready for implementation — NO onchain deployment or functioning application is claimed yet.**  
+> **Status: V1 deployed on NEAR Testnet as [`last-armand.testnet`](docs/DEPLOYMENT.md); buy → settle → claim verified on-chain with explorer links ([`docs/GATE4_REPORT.md`](docs/GATE4_REPORT.md)). Web app in [`apps/web`](apps/web/README.md). Not audited, not immutable (see Disclosures).**  
 > **Network: NEAR Testnet exclusively. Never use real-value tokens for this prototype.**
 
 ## One-sentence pitch
@@ -12,13 +12,36 @@ LAST is an experimental memecoin game with its own onchain NEAR/LAST market. A p
 
 This is **not a novel invention of last-buyer-wins mechanics**: FOMO3D (2018), Fomo3D variants and ClawFomo demonstrate precedents. The V2 aim is a simpler, independently auditable NEAR implementation, not a claim of originality for the timer game itself.
 
+## Current status, roadmap and disclosures
+
+- **V1 is live and verified on NEAR Testnet.** The contract is `last-armand.testnet`, at source commit `ca30bf8`, and its on-chain code sha256 matches `docs/DEPLOYMENT.md`. The following are proven by real transactions (`docs/GATE4_REPORT.md`):
+  - eligible buy resets the timer; a dust buy does not;
+  - sell → withdrawable credit;
+  - `settle_round`, then `claim_reward` (`IN_FLIGHT → PAID`);
+  - a second claim is rejected (`ERR_ALREADY_PAID`);
+  - `withdraw_near_credit`;
+  - a new round starts from the starting pot;
+  - 12/12 financial invariants hold after the run.
+
+  Still to record: a crown change between two distinct wallets.
+- **V2 "Crown Economy" (85% jackpot / 10% carry-over / 5% platform) is analysed and on the roadmap, not implemented.** A team review kept V1 for the hackathon:
+  - the larger jackpot share is invisible at testnet volumes;
+  - a new code hash would invalidate the verified evidence.
+
+  The proposed capped release of the carry-over (`R_next = max(R − 0.05·F, 0.10·F)`) works out to a delayed 10% rebate with no inherited pot, so it is not adopted as designed.
+- **Rejected: a dynamic minimum eligible buy** (`max(0.10 NEAR, 20% of the jackpot)`). It prices out small players without deterring bots, and it lets anyone make a pending buy at the displayed minimum ineligible by moving the jackpot.
+- **Disclosures:**
+  - **20% of every LAST fee (15% treasury, 5% ops) is locked.** The deployed V1 code has no withdraw method for it, so it reaches neither players nor the team.
+  - **`last-armand.testnet` still holds a full-access key.** Its owner can replace the contract code and therefore these rules: **the contract is not immutable.** The web app reads and shows the key status live.
+- **Known V1 limitation:** the carried-over starting pot moves entirely to whoever makes the first eligible buy of the next round. A lone player can capture it if nobody else plays before the timer ends. At testnet volumes this is about 0.001 NEAR.
+
 ## 1. Scope and truthfulness
 
 The **planned** MVP contains one Rust smart contract, a NEP-141-compatible token, a constant-product native-NEAR/LAST internal market, round tracking, segregated fee accounting, claimable payouts, and a React frontend. No external DEX, token bridge, indexer, AI agent, DAO, or automatic trading bot is required.
 
 **Only purchases executed through LAST's own `buy()` method count.** Transfers of LAST and trades on independent DEXs never reset the timer or pay LAST's game fee. NEP-141 does not provide a general-purpose hook that could reliably classify every external DEX trade.
 
-**Status at document creation:** specification only. Any examples of methods, commands, transaction hashes or addresses in this document describe what developers must implement or fill in, not already-running deployments.
+**Status at document creation (12 Nov 2026):** specification only — see "Current status" above for what has since been deployed and verified. Any examples of methods, commands, transaction hashes or addresses in this document describe what developers must implement or fill in, not already-running deployments.
 
 ## 2. V2 economic policy
 
@@ -252,13 +275,13 @@ These commands represent the **target developer workflow** and cannot work until
 - [x] Rust unit tests and contract WASM build passed (63 unit tests, 239 KB WASM)
 - [x] Sandbox integration tests passed, including payouts and state invariants (`tests/integration`)
 - [x] One NEAR Testnet contract deployed, contract ID recorded: `last-armand.testnet` (see `docs/DEPLOYMENT.md`)
-- [ ] Two distinct testnet wallets used, with contract storage funded
-- [ ] Two signed eligible buys with transaction links
-- [ ] Ineligible dust buy observed and rejected for timer purposes
-- [ ] A sale observed without changing the leader
-- [ ] `settle_round` after expiration with an explorer link
-- [ ] Actual jackpot claim and rejected second claim, both documented
-- [ ] Real NEAR balance and reserve reconciliation documented
+- [ ] Two distinct testnet wallets used, with contract storage funded — **still to do**: the 2026-11-12 run used one account for both roles
+- [x] Two signed eligible buys with transaction links (`docs/DEPLOYMENT.md`; same signer, see next item)
+- [x] Ineligible dust buy observed and rejected for timer purposes
+- [x] A sale observed without changing the leader
+- [x] `settle_round` after expiration with an explorer link
+- [x] Actual jackpot claim and rejected second claim, both documented (`docs/GATE4_REPORT.md`)
+- [x] Real NEAR balance and reserve reconciliation documented (12 invariants, `scripts/gate4.mjs`)
 - [ ] README updated with commands, outputs, architecture and deployed addresses
 - [ ] GitHub public, LICENSE present, AI-generated/pre-existing code credited
 - [ ] Demo video and public X post as required by NEAR Hackathon 2026
@@ -272,6 +295,8 @@ This demo is a high-risk, prize-based trading game. Last-second bots, multiple w
 **Testnet only — no monetary value.** A real-money launch may fall under gambling regulation. The French ANJ describes four relevant criteria: a public offer, a financial sacrifice, a chance-based element and an expectation of gain. JONUM rules are not automatic authorization for a NEAR jackpot. Obtain professional legal advice before any public mainnet offer.
 
 The contract is unaudited. Do not handle real funds without a full independent security review.
+
+20% of fees (treasury + ops) have no withdraw path in the deployed code, and the contract account keeps a full-access key, so the contract can be replaced by its owner: it is **not immutable**. The starting pot carried into a new round can be captured by a lone first buyer when nobody else plays (see "Current status, roadmap and disclosures").
 
 ## 13. Research references (checked 12 Nov 2026)
 
@@ -307,7 +332,19 @@ The contract is unaudited. Do not handle real funds without a full independent s
 | [`near-workspaces`](https://github.com/near/near-workspaces-rs) 0.24.0, `tokio`, `anyhow`, `serde_json` | Sandbox integration tests | MIT or Apache-2.0 (`tokio`: MIT) |
 | `cargo-near`, `near-cli-rs` | WASM build and testnet deployment tooling | MIT or Apache-2.0 |
 
-Frontend dependencies are listed in `apps/web/package.json`.
+Frontend (`apps/web`, exact versions in `apps/web/package.json` / `pnpm-lock.yaml`):
+
+| Library | Used for | License |
+|---|---|---|
+| [`react`, `react-dom`](https://github.com/facebook/react) 19.3.1 | UI | MIT |
+| [`@hot-labs/near-connect`](https://github.com/hot-dao/near-selector) 0.12.0 | NEAR wallet connection (testnet) | MIT |
+| [`vite`](https://github.com/vitejs/vite) 8.2.6, `@vitejs/plugin-react` 6.2.1 | Dev server and build | MIT |
+| [`tailwindcss`, `@tailwindcss/vite`](https://github.com/tailwindlabs/tailwindcss) 4.3.5 | Styling | MIT |
+| [`typescript`](https://github.com/microsoft/TypeScript) 6.0.3 | Type checking | Apache-2.0 |
+| [`vitest`](https://github.com/vitest-dev/vitest) 5.0.5, `jsdom` 30.1.3, `@testing-library/react` 16.3.3 | Tests | MIT |
+| Space Grotesk, JetBrains Mono (Google Fonts) | Typography | SIL Open Font License 1.1 |
+
+Public NEAR Testnet RPC used by the web app (read-only views): FastNEAR, then dRPC as fallback.
 
 **Prior art:** the last-buyer-wins timer mechanic is not ours; see the FOMO3D, Fomo3D and ClawFomo references in §13.
 
