@@ -6,6 +6,7 @@ import { NEAR_DECIMALS, formatCompact, formatNear, formatUnits } from "../lib/am
 import { type DisplayPhase, formatCountdown, formatDuration, isUrgent, progressLeft } from "../lib/countdown";
 import { detectLeaderChange, detectSettlement, shortAccount } from "../lib/game";
 import type { GameState } from "../lib/types";
+import { FlameCanvas } from "./FlameCanvas";
 import { Badge, Button, CrownIcon, Dash, ExternalLink, cx } from "./ui";
 
 const PHASE_BADGE: Record<DisplayPhase, { tone: "acid" | "heat" | "gold" | "mute"; text: string }> = {
@@ -62,6 +63,9 @@ export function Hero() {
   if (phase === "EXPIRED") digits = "00:00";
   const pct = phase === "ACTIVE" && duration ? progressLeft(remaining, duration) : phase === "IDLE" ? 1 : 0;
 
+  // Flame height = share of the round time left. Decorative: the contract alone decides expiry.
+  const flameLevel = phase === "ACTIVE" ? pct : phase === "IDLE" ? 0.22 : phase === "CLOSING" ? 0.04 : phase === "EXPIRED" ? 0 : 0.12;
+
   // Victory banner: the most recent settled round while the next one has not started yet.
   const lastSettled = game?.lastSettledRoundId ?? null;
   const lastRound = lastSettled !== null ? (rounds.get(lastSettled.toString()) ?? null) : null;
@@ -74,142 +78,142 @@ export function Hero() {
   };
 
   return (
-    // overflow-clip (not hidden): clips the decorative glow without creating a scroll container
+    // overflow-clip (not hidden): clips the tilted stickers without creating a scroll container
     // that scrollIntoView could shift sideways.
-    <section aria-labelledby="hero-title" className="relative overflow-clip rounded-3xl border border-line bg-panel/80 p-5 sm:p-8">
-      <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-acid/10 blur-3xl" aria-hidden />
-      <h1 id="hero-title" className="sr-only">LAST live game</h1>
+    <section aria-labelledby="hero-title" className="hard relative overflow-clip bg-panel">
+      <h1 id="hero-title" className="sr-only">$LAST live game</h1>
       <p className="sr-only" aria-live="polite">{announce}</p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {phase ? <Badge tone={PHASE_BADGE[phase].tone}>{PHASE_BADGE[phase].text}</Badge> : <Badge>{deployed ? "Loading" : deployment === "checking" ? "Connecting to contract…" : "No live data"}</Badge>}
-        {game && <Badge tone="sky">Round #{game.roundId.toString()}</Badge>}
-        {duration !== null && <Badge>Timer {formatDuration(duration)}</Badge>}
-      </div>
-
-      {/* Jackpot + crown holder */}
-      <div className="mt-6 grid gap-5 sm:grid-cols-2 sm:items-end">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-mute">Jackpot</div>
-          <div className="mt-1 flex items-baseline gap-2">
-            {game ? (
-              <span className="font-mono text-5xl font-extrabold tabular text-jackpot sm:text-6xl">{formatNear(game.activePot, 4)}</span>
-            ) : deployed ? (
-              <span className="skeleton inline-block h-12 w-40 rounded-lg" aria-label="Loading" />
+      {/* Stage: blue flames whose height is the time left */}
+      <div className="relative">
+        <FlameCanvas level={flameLevel} className="absolute inset-0 h-full w-full" />
+        <div className="relative flex min-h-[400px] flex-col justify-between p-5 sm:min-h-[440px] sm:p-7">
+          <div className="flex flex-wrap items-center gap-2">
+            {phase ? (
+              <Badge tone={PHASE_BADGE[phase].tone}>{PHASE_BADGE[phase].text}</Badge>
             ) : (
-              <span className="font-mono text-5xl font-extrabold text-mute sm:text-6xl">—</span>
+              <Badge>{deployed ? "Loading" : deployment === "checking" ? "Connecting to contract…" : "No live data"}</Badge>
             )}
-            <span className="font-mono text-xl font-bold text-gold/80">NEAR</span>
+            {game && <Badge tone="sky">Round #{game.roundId.toString()}</Badge>}
+            {duration !== null && <Badge tone="sky">Timer {formatDuration(duration)}</Badge>}
           </div>
-          <div className="mt-1 text-sm text-mute">
-            {game?.status === "IDLE" ? "Starting pot" : "Next round's starting pot"}:{" "}
-            <span className="font-mono text-text/90">{game ? `${formatNear(game.nextSeedPot, 4)} NEAR` : "—"}</span>
-            {game?.status === "IDLE" && game.nextSeedPot > 0n && <> · carried over, joins the jackpot on the first eligible buy</>}
-          </div>
-        </div>
 
-        <div
-          className={cx(
-            "relative flex items-center gap-4 rounded-2xl border p-4",
-            youLead ? "border-acid/60 bg-acid/10" : "border-line bg-panel-2/70",
-          )}
-        >
           <div
-            key={flashKey}
-            className={cx("grid h-14 w-14 shrink-0 place-items-center rounded-2xl", leader ? "bg-acid text-ink" : "bg-panel text-line", flashKey > 0 && "anim-crown anim-flash")}
+            role="timer"
+            aria-label={phase === "ACTIVE" ? `Time left, estimated: ${digits}` : PHASE_BADGE[phase ?? "IDLE"].text}
+            className={cx(
+              "font-poster my-4 text-center text-[26vw] leading-[0.85] tabular sm:text-[11rem] lg:text-[12rem]",
+              phase === "ACTIVE" && !urgent && "text-text mix-blend-multiply",
+              urgent && "anim-urgent text-heat",
+              phase === "CLOSING" && "text-acid",
+              phase === "EXPIRED" && "text-heat",
+              phase === "IDLE" && "text-text/25",
+              phase === null && "text-line",
+            )}
           >
-            <CrownIcon className="h-8 w-8" />
+            {digits}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-mute">
-              {phase === "EXPIRED" ? "Leader at expiry" : "Crown holder"}
+
+          <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+            <div className="hard bg-panel-2 p-3 sm:-rotate-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-mute">Jackpot</div>
+              <div className="flex items-baseline gap-2">
+                {game ? (
+                  <span className="font-poster text-4xl tabular text-acid sm:text-5xl">{formatNear(game.activePot, 4)}</span>
+                ) : deployed ? (
+                  <span className="skeleton inline-block h-10 w-36" aria-label="Loading" />
+                ) : (
+                  <span className="font-poster text-4xl text-mute sm:text-5xl">—</span>
+                )}
+                <span className="font-poster text-lg text-text">NEAR</span>
+              </div>
+              <div className="mt-0.5 text-[11px] text-mute">
+                {game?.status === "IDLE" ? "Starting pot" : "Next round's starting pot"}:{" "}
+                <span className="font-mono text-text">{game ? `${formatNear(game.nextSeedPot, 4)} NEAR` : "—"}</span>
+                {game?.status === "IDLE" && game.nextSeedPot > 0n && <> · joins the jackpot on the first eligible buy</>}
+              </div>
             </div>
-            <div className="truncate font-mono text-lg font-bold sm:text-xl">
-              {leader ? (
-                simulated ? shortAccount(leader, 28) : <ExternalLink href={explorerAccountUrl(leader, config.explorerUrl)}>{shortAccount(leader, 28)}</ExternalLink>
-              ) : (
-                <span className="text-mute">Nobody — take it</span>
+
+            <div className={cx("hard relative flex items-center gap-3 p-3 sm:rotate-1", youLead ? "bg-flame" : "bg-panel-2")}>
+              <div
+                key={flashKey}
+                className={cx(
+                  "grid h-12 w-12 shrink-0 place-items-center border-2 border-text",
+                  leader ? "bg-acid text-panel-2" : "bg-panel text-line",
+                  flashKey > 0 && "anim-crown anim-flash",
+                )}
+              >
+                <CrownIcon className="h-7 w-7" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-mute">{phase === "EXPIRED" ? "Leader at expiry" : "Crown holder"}</div>
+                <div className="truncate font-mono text-base font-semibold sm:text-lg">
+                  {leader ? (
+                    simulated ? (
+                      shortAccount(leader, 28)
+                    ) : (
+                      <ExternalLink href={explorerAccountUrl(leader, config.explorerUrl)}>{shortAccount(leader, 28)}</ExternalLink>
+                    )
+                  ) : (
+                    <span className="text-mute">Nobody — take it</span>
+                  )}
+                </div>
+                {youLead && <div className="text-sm font-semibold text-acid">That's you.</div>}
+              </div>
+              {stolen && (
+                <div role="status" className="anim-crown absolute -top-3 right-3 border-2 border-text bg-heat px-3 py-1 font-mono text-[11px] font-bold uppercase text-panel-2">
+                  Crown stolen{stolen.thief === accountId ? " by you" : ""}!
+                </div>
               )}
             </div>
-            {youLead && <div className="text-sm font-semibold text-acid">That's you.</div>}
           </div>
-          {stolen && (
-            <div role="status" className="anim-crown absolute -top-3 right-3 rounded-full bg-heat px-3 py-1 font-mono text-[11px] font-extrabold uppercase text-white shadow-lg">
-              Crown stolen{stolen.thief === accountId ? " by you" : ""}!
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Countdown */}
-      <div className="mt-6">
-        <div
-          role="timer"
-          aria-label={phase === "ACTIVE" ? `Time left, estimated: ${digits}` : PHASE_BADGE[phase ?? "IDLE"].text}
-          className={cx(
-            "font-mono text-[22vw] font-extrabold leading-none tabular sm:text-[9rem] lg:text-[10rem]",
-            phase === "ACTIVE" && !urgent && "text-acid glow-acid",
-            urgent && "anim-urgent text-heat glow-heat",
-            phase === "CLOSING" && "text-gold",
-            phase === "EXPIRED" && "text-heat",
-            phase === "IDLE" && "text-text/15",
-            phase === null && "text-line",
-          )}
-        >
-          {digits}
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel-2" aria-hidden>
-          <div
-            className={cx("h-full rounded-full transition-[width] duration-300", urgent ? "bg-heat" : phase === "EXPIRED" ? "bg-heat/40" : "bg-acid")}
-            style={{ width: `${(pct * 100).toFixed(2)}%` }}
-          />
-        </div>
-        <p className="mt-3 text-sm text-text/80">
-          {phase === null && deployment === "checking" ? "Reading the LAST contract on NEAR Testnet…" : phaseHint(phase, youLead, minBuy, duration, game)}
+      <div className="space-y-4 border-t-2 border-text p-5 sm:p-6">
+        <p className="text-sm text-text">
+          {phase === null && deployment === "checking" ? "Reading the $LAST contract on NEAR Testnet…" : phaseHint(phase, youLead, minBuy, duration, game)}
         </p>
-      </div>
 
-      {/* Victory (after on-chain settlement) */}
-      {showVictory && (
-        <div
-          key={celebrate?.toString() ?? "victory"}
-          className={cx("mt-5 rounded-2xl border border-gold/50 bg-gold/10 p-4", celebrate !== null && "anim-crown")}
-        >
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold">
-            <CrownIcon className="h-4 w-4" /> Round #{lastSettled!.toString()} settled on-chain
-          </div>
-          {lastRound ? (
-            <p className="mt-1 text-sm">
-              Winner <span className="font-mono font-bold">{shortAccount(lastRound.winner, 28)}</span>
-              {lastRound.winner === accountId && <span className="font-bold text-acid"> (you!)</span>} · prize{" "}
-              <span className="font-mono font-bold text-gold">{formatNear(lastRound.prize)} NEAR</span> · claim {lastRound.claimStatus}
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-mute">Winner details appear when the contract exposes get_round (Gate 2).</p>
-          )}
-        </div>
-      )}
-
-      {/* Steal the crown CTA + how a win is confirmed */}
-      <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-line bg-panel-2/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm">
-          <div className="font-semibold">
-            {minBuy !== null ? (
-              <>
-                Buy <span className="font-mono text-acid">≥ {formatCompact(minBuy, 24)} NEAR</span> to steal the crown
-                {duration !== null && <> and reset the timer to {formatDuration(duration)}</>}.
-              </>
+        {/* Victory (after on-chain settlement) */}
+        {showVictory && (
+          <div key={celebrate?.toString() ?? "victory"} className={cx("hard bg-flame p-4", celebrate !== null && "anim-crown")}>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text">
+              <CrownIcon className="h-4 w-4" /> Round #{lastSettled!.toString()} settled on-chain
+            </div>
+            {lastRound ? (
+              <p className="mt-1 text-sm">
+                Winner <span className="font-mono font-bold">{shortAccount(lastRound.winner, 28)}</span>
+                {lastRound.winner === accountId && <span className="font-bold text-acid"> (you!)</span>} · prize{" "}
+                <span className="font-mono font-bold text-acid">{formatNear(lastRound.prize)} NEAR</span> · claim {lastRound.claimStatus}
+              </p>
             ) : (
-              <>
-                Buy at least the minimum to steal the crown. <Dash />
-              </>
+              <p className="mt-1 text-sm text-mute">Winner details appear when the contract exposes get_round (Gate 2).</p>
             )}
           </div>
-          <div className="mt-0.5 text-xs text-mute">Win = timer expires on-chain → anyone settles → winner claims. Your browser's 00:00 alone never decides.</div>
+        )}
+
+        {/* Steal the crown CTA + how a win is confirmed */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm">
+            <div className="font-semibold">
+              {minBuy !== null ? (
+                <>
+                  Buy <span className="font-mono text-acid">≥ {formatCompact(minBuy, 24)} NEAR</span> to steal the crown
+                  {duration !== null && <> and reset the timer to {formatDuration(duration)}</>}.
+                </>
+              ) : (
+                <>
+                  Buy at least the minimum to steal the crown. <Dash />
+                </>
+              )}
+            </div>
+            <div className="mt-0.5 text-xs text-mute">Win = timer expires on-chain → anyone settles → winner claims. Your browser's 00:00 alone never decides.</div>
+          </div>
+          <Button className="shrink-0" onClick={stealTheCrown} disabled={!deployed || phase === "EXPIRED" || minBuy === null}>
+            <CrownIcon className="h-4 w-4" /> Steal the crown
+          </Button>
         </div>
-        <Button className="shrink-0" onClick={stealTheCrown} disabled={!deployed || phase === "EXPIRED" || minBuy === null}>
-          <CrownIcon className="h-4 w-4" /> Steal the crown
-        </Button>
       </div>
     </section>
   );

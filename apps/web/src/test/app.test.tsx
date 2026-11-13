@@ -188,7 +188,7 @@ describe("Council recommendations: starting pot + disclosure", () => {
     await simulated(sim);
     expect(screen.getByText(/Starting pot/)).toBeTruthy();
     expect(screen.getByText(/joins the jackpot on the first eligible buy/)).toBeTruthy();
-    expect(screen.getByText(/20% of every LAST fee/)).toBeTruthy();
+    expect(screen.getByText(/20% of every \$LAST fee/)).toBeTruthy();
     expect(screen.getByText(/now 0.004 NEAR/)).toBeTruthy(); // treasury + ops, read from state
     expect(screen.getAllByText(/the contract is not immutable/).length).toBeGreaterThan(0);
     expect(screen.getByText(/still holds a full-access key/)).toBeTruthy();

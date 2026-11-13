@@ -11,14 +11,14 @@ export function MarketPanel() {
   return (
     <Card title="Market">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <Stat label="Spot price" value={price !== null ? `${formatCompact(price, 24, 4)} NEAR` : <Dash />} hint="per LAST · marginal, indicative" />
+        <Stat label="Spot price" value={price !== null ? `${formatCompact(price, 24, 4)} NEAR` : <Dash />} hint="per $LAST · marginal, indicative" />
         <Stat label="Buy volume" value={market ? `${formatNear(market.totalBuyVolume, 2)} N` : <Dash />} hint="gross NEAR in" />
         <Stat label="Sell volume" value={market ? `${formatNear(market.totalSellVolume, 2)} N` : <Dash />} hint="gross NEAR out" />
         <Stat label="Buys" value={market ? market.buyCount.toString() : <Dash />} hint="all buys, any size" />
         <Stat label="Sells" value={market ? market.sellCount.toString() : <Dash />} />
         <Stat label="Eligible buys" value={game ? game.qualifyingBuyCount : <Dash />} hint="this round · not unique players" />
         <Stat label="NEAR reserve" value={market ? `${formatNear(market.nearReserve, 3)} N` : <Dash />} hint="AMM X" />
-        <Stat label="LAST inventory" value={market ? formatLast(market.lastInventory, 0) : <Dash />} hint="AMM Y" />
+        <Stat label="$LAST inventory" value={market ? formatLast(market.lastInventory, 0) : <Dash />} hint="AMM Y" />
         <Stat label="Treasury · Ops" value={market ? `${formatNear(market.treasuryReserve, 3)} · ${formatNear(market.opsReserve, 3)}` : <Dash />} hint="locked · no withdraw method in V1" />
       </div>
 
@@ -41,7 +41,7 @@ export function MarketPanel() {
       <div className="mt-3 rounded-xl border border-gold/30 bg-gold/5 p-4 text-xs leading-relaxed text-text/85">
         <div className="mb-1 font-semibold uppercase tracking-wider text-gold">Disclosure</div>
         <p>
-          20% of every LAST fee (15% treasury, 5% ops
+          20% of every $LAST fee (15% treasury, 5% ops
           {market ? <>, now {formatNear(market.treasuryReserve + market.opsReserve, 4)} NEAR</> : null}) is locked: the deployed V1 code has no
           withdraw method for it. It goes neither to players nor to the team.
         </p>

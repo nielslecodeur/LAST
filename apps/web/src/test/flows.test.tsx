@@ -51,7 +51,7 @@ describe("buy flows", () => {
 
     fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.01" } });
     await waitFor(() => expect(screen.getByText(/tokens only, no crown/)).toBeTruthy());
-    fireEvent.click(button(/^Buy LAST$/));
+    fireEvent.click(button(/^Buy \$LAST$/));
     await waitFor(() => expect(screen.getAllByText(/crown and timer unchanged/).length).toBeGreaterThan(0));
     expect(within(hero()).getByText(/rival\.simulated/)).toBeTruthy(); // crown unchanged
     expect(sim.balances.get(SIM_USER)! > 0n).toBe(true); // but tokens received
@@ -66,8 +66,8 @@ describe("buy flows", () => {
     await ready();
     fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.1" } });
     await waitFor(() => expect(screen.getByText(/Storage registration \(once\)/)).toBeTruthy());
-    await waitFor(() => expect(button(/Buy LAST & steal the crown/).disabled).toBe(false));
-    fireEvent.click(button(/Buy LAST & steal the crown/));
+    await waitFor(() => expect(button(/Buy \$LAST & steal the crown/).disabled).toBe(false));
+    fireEvent.click(button(/Buy \$LAST & steal the crown/));
     await waitFor(() => expect(screen.getAllByText(/you took the crown/).length).toBeGreaterThan(0));
     expect(within(hero()).getByText(/That's you/)).toBeTruthy();
     expect(sim.balances.has(SIM_USER)).toBe(true);
@@ -94,9 +94,9 @@ describe("stale registration (Gate 4 finding)", () => {
     await ready();
     fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.05" } });
     await waitFor(() => expect(screen.getByText(/Storage registration \(once\)/)).toBeTruthy()); // stale UI
-    await waitFor(() => expect(button(/Buy LAST & steal the crown/).disabled).toBe(false));
+    await waitFor(() => expect(button(/Buy \$LAST & steal the crown/).disabled).toBe(false));
     stale = false; // the chain truth, read at submit time
-    fireEvent.click(button(/Buy LAST & steal the crown/));
+    fireEvent.click(button(/Buy \$LAST & steal the crown/));
     await waitFor(() => expect(sent.length).toBe(1));
     expect(sent[0]).toEqual(["buy"]);
   });
@@ -152,8 +152,8 @@ describe("wallet & network failures", () => {
     mount(sim, writer);
     await ready();
     fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.05" } });
-    await waitFor(() => expect(button(/Buy LAST & steal the crown/).disabled).toBe(false));
-    fireEvent.click(button(/Buy LAST & steal the crown/));
+    await waitFor(() => expect(button(/Buy \$LAST & steal the crown/).disabled).toBe(false));
+    fireEvent.click(button(/Buy \$LAST & steal the crown/));
     await waitFor(() => expect(screen.getByText(/Rejected in wallet/)).toBeTruthy());
     expect(screen.queryByText(/^Confirmed/)).toBeNull();
   });
@@ -169,8 +169,8 @@ describe("wallet & network failures", () => {
     mount(sim, writer);
     await ready();
     fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.05" } });
-    await waitFor(() => expect(button(/Buy LAST & steal the crown/).disabled).toBe(false));
-    fireEvent.click(button(/Buy LAST & steal the crown/));
+    await waitFor(() => expect(button(/Buy \$LAST & steal the crown/).disabled).toBe(false));
+    fireEvent.click(button(/Buy \$LAST & steal the crown/));
     await waitFor(() => expect(screen.getByText(/Confirm in your wallet/)).toBeTruthy());
     expect(button(/Confirm in wallet…/).disabled).toBe(true);
     await act(async () => release());
