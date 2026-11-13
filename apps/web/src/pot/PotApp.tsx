@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import { formatNear } from "../lib/amounts";
 import { formatCountdown, formatDuration } from "../lib/countdown";
-import { shortAccount } from "../lib/game";
+import { shortAccount } from "../lib/accounts";
 import { CrownIcon, cx } from "../components/ui";
 import { PotReader, type PotRound } from "./potReader";
 import { usePot } from "./usePot";
 
 const env = import.meta.env as Record<string, string | undefined>;
 export const POT_ID = (env.VITE_POT_ID ?? "").trim() || "pot.heavycat9990.near";
-const TRADE_URL = (env.VITE_TOKEN_TRADE_URL ?? "").trim();
+const TRADE_URL = (env.VITE_TOKEN_TRADE_URL ?? "").trim() || "https://nearly.trade/last-2.nearlytrade.near";
 const REPO_URL = "https://github.com/nielslecodeur/LAST";
 const EXPLORER = "https://nearblocks.io";
 

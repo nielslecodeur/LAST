@@ -9,7 +9,7 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# Same pinned versions as contracts/last (docs/SPEC_V2.md §2.1).
+# Versions pinned exactly; bump only after a full build + test run.
 [dependencies]
 near-sdk = "=5.30.1"
 

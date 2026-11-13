@@ -28,5 +28,3 @@ desktop.ini
 !.vscode/extensions.json
 .idea/
 
-# Gate 4 local snapshots (public chain data, not committed)
-.gate4/

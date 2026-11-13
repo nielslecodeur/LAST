@@ -1,351 +1,134 @@
-# LAST — Last Buyer Wins
+# $LAST — the last buyer takes the pot
 
-> **NEAR Hackathon 2026 | Memecoins With Mechanics + Games With Real Economies**  
-> **Status: V1 deployed on NEAR Testnet as [`last-armand.testnet`](docs/DEPLOYMENT.md); buy → settle → claim verified on-chain with explorer links ([`docs/GATE4_REPORT.md`](docs/GATE4_REPORT.md)). Web app in [`apps/web`](apps/web/README.md). Not audited, not immutable (see Disclosures).**  
-> **Network: NEAR Testnet exclusively. Never use real-value tokens for this prototype.**
+**$LAST is a memecoin live on NEAR mainnet with a jackpot game built into its trading.**
+Every buy of at least **0.5 NEAR** takes the crown and resets a **60-minute** countdown. When the countdown reaches zero, **90% of the jackpot is paid automatically** to the last crown holder and 10% seeds the next round. The jackpot is funded by the token's trading: **all of the creator's share of the pool fees and of the 1% buy/sell tax** goes to the jackpot contract.
 
-## One-sentence pitch
+- **Play / buy:** https://nearly.trade/last-2.nearlytrade.near
+- **Live jackpot:** https://last-jackpot.vercel.app
+- **Jackpot contract:** [`pot.heavycat9990.near`](https://nearblocks.io/address/pot.heavycat9990.near)
+- **Token:** [`last-2.nearlytrade.near`](https://nearblocks.io/token/last-2.nearlytrade.near)
+- **Hackathon track:** NEAR Hackathon 2026, *Memecoins With Mechanics*
 
-**Buy LAST. Take the crown. Every qualifying purchase restarts a countdown; if nobody buys before it expires, the last buyer wins the NEAR jackpot — all enforced onchain.**
+## Key facts
 
-LAST is an experimental memecoin game with its own onchain NEAR/LAST market. A portion of the market's fees funds the current round's prize and a seed for the next round. Anyone can settle an expired round; the winner claims their reward. The game does not rely on a server to decide who won.
-
-This is **not a novel invention of last-buyer-wins mechanics**: FOMO3D (2018), Fomo3D variants and ClawFomo demonstrate precedents. The V2 aim is a simpler, independently auditable NEAR implementation, not a claim of originality for the timer game itself.
-
-## Current status, roadmap and disclosures
-
-- **V1 is live and verified on NEAR Testnet.** The contract is `last-armand.testnet`, at source commit `ca30bf8`, and its on-chain code sha256 matches `docs/DEPLOYMENT.md`. The following are proven by real transactions (`docs/GATE4_REPORT.md`):
-  - eligible buy resets the timer; a dust buy does not;
-  - sell → withdrawable credit;
-  - `settle_round`, then `claim_reward` (`IN_FLIGHT → PAID`);
-  - a second claim is rejected (`ERR_ALREADY_PAID`);
-  - `withdraw_near_credit`;
-  - a new round starts from the starting pot;
-  - 12/12 financial invariants hold after the run.
-
-  Still to record: a crown change between two distinct wallets.
-- **V2 "Crown Economy" (85% jackpot / 10% carry-over / 5% platform) is analysed and on the roadmap, not implemented.** A team review kept V1 for the hackathon:
-  - the larger jackpot share is invisible at testnet volumes;
-  - a new code hash would invalidate the verified evidence.
-
-  The proposed capped release of the carry-over (`R_next = max(R − 0.05·F, 0.10·F)`) works out to a delayed 10% rebate with no inherited pot, so it is not adopted as designed.
-- **Rejected: a dynamic minimum eligible buy** (`max(0.10 NEAR, 20% of the jackpot)`). It prices out small players without deterring bots, and it lets anyone make a pending buy at the displayed minimum ineligible by moving the jackpot.
-- **Disclosures:**
-  - **20% of every LAST fee (15% treasury, 5% ops) is locked.** The deployed V1 code has no withdraw method for it, so it reaches neither players nor the team.
-  - **`last-armand.testnet` still holds a full-access key.** Its owner can replace the contract code and therefore these rules: **the contract is not immutable.** The web app reads and shows the key status live.
-- **Known V1 limitation:** the carried-over starting pot moves entirely to whoever makes the first eligible buy of the next round. A lone player can capture it if nobody else plays before the timer ends. At testnet volumes this is about 0.001 NEAR.
-
-## 1. Scope and truthfulness
-
-The **planned** MVP contains one Rust smart contract, a NEP-141-compatible token, a constant-product native-NEAR/LAST internal market, round tracking, segregated fee accounting, claimable payouts, and a React frontend. No external DEX, token bridge, indexer, AI agent, DAO, or automatic trading bot is required.
-
-**Only purchases executed through LAST's own `buy()` method count.** Transfers of LAST and trades on independent DEXs never reset the timer or pay LAST's game fee. NEP-141 does not provide a general-purpose hook that could reliably classify every external DEX trade.
-
-**Status at document creation (12 Nov 2026):** specification only — see "Current status" above for what has since been deployed and verified. Any examples of methods, commands, transaction hashes or addresses in this document describe what developers must implement or fill in, not already-running deployments.
-
-## 2. V2 economic policy
-
-### Market fees (NOT NEAR network gas)
-
-| Transaction | LAST internal-market fee | Rationale |
-|---|---:|---|
-| Buy LAST for native NEAR | **4.00%** of gross NEAR input | Main source of current prize |
-| Sell LAST for native NEAR | **2.00%** of gross NEAR sale output | Lower friction to exit |
-| Wallet-to-wallet FT transfer | **0% LAST game fee** | Standard FT transfer, may cost network gas/storage |
-| Claim jackpot | **0% additional game fee** | Prize is net; only the normal NEAR network gas applies |
-
-These percentages are **design decisions**, not market averages or mathematically optimal rates. The V1 5%/5% model was reduced to mitigate round-trip costs. Relative benchmarks: Pump.fun reports a 1.25% fee on its bonding curve (before applicable interface fees), while Meme.Cooking lists a 0.5% deposit fee, 2% launch fee and 2% early-withdrawal penalty. Different businesses and fee bases are **not directly comparable**.
-
-### Allocation of each LAST trading fee
-
-| Destination | Share **of the fee** | 1 NEAR buy: fee 0.04 NEAR |
-|---|---:|---:|
-| Current round jackpot | **70%** | 0.028 NEAR |
-| Seed for the next round | **10%** | 0.004 NEAR |
-| Project treasury reserve | **15%** | 0.006 NEAR |
-| Platform/operations | **5%** | 0.002 NEAR |
-| **Total fee** | **100%** | **0.040 NEAR** |
-| Credited to trading reserve | — | **0.960 NEAR** |
-
-The 15% treasury reserve is **NOT automatically deployed as real Rhea LP** in the MVP. It is tracked separately in the contract's accounting. Operational shares, withdrawal rights, and safe accounting are described in [docs/SPEC_V2.md](docs/SPEC_V2.md).
-
-For a sell that produces 1 NEAR **gross** before LAST's fee, the trader receives 0.98 NEAR; the remaining 0.02 NEAR is split 0.014/0.002/0.003/0.001 NEAR across jackpot/next seed/treasury/ops. The trading reserve decreases by the 1 NEAR gross output, not the 0.98 NEAR paid to the seller.
-
-**Idle-round policy:** fees from trades while no round is active send their combined 80% prize-related share into a pending next-round pot. For an active round, the 70% component belongs to the live jackpot and the 10% component remains assigned to the next-round seed. Upon settlement, the live prize is *reserved for the winner* and may never be reused to fund trades or later rounds.
-
-### Example sensitivity, excluding price impact and gas
-
-| Gross buy volume | Gross sell output volume | Buy fees (4%) | Sell fees (2%) | 70% current-jackpot allocation |
-|---:|---:|---:|---:|---:|
-| 10 NEAR | 0 NEAR | 0.40 | 0 | 0.28 NEAR |
-| 100 NEAR | 40 NEAR | 4.00 | 0.80 | 3.36 NEAR |
-| 500 NEAR | 200 NEAR | 20.00 | 4.00 | 16.80 NEAR |
-
-These figures illustrate **fee allocation only**, not trading profits, expected payouts or a forecast of user activity. A player can lose money even if they win a prize; price impact, entry and exit fees, competition and gas matter.
-
-## 3. LAST tokenomics — deliberately simple
-
-| Parameter | V2 decision |
+| Item | Value |
 |---|---|
-| Token name / symbol | Last Buyer Wins / LAST |
-| Standard | NEP-141, NEP-145 storage, NEP-148 metadata |
-| Max/initial supply | **1,000,000 LAST** |
-| Decimals | **18** |
-| Initial distribution | **100% of supply in the contract's trading inventory** |
-| Team allocation | **0%** |
-| Private sale / presale | **None** |
-| Additional mint | **Disabled** after one-time initialization |
-| Token burn / staking / holder dividends | **None in V2 MVP** |
-| Transfer tax | **0%**; only internal-market trades pay game fees |
-| Market | Native NEAR paired with LAST, inside the same Rust contract |
+| Network | **NEAR mainnet** |
+| Token | `$LAST` (name "Last"), NEP-141, contract `last-2.nearlytrade.near`, 18 decimals, fixed supply 1,000,000,000 |
+| Launchpad | [Nearly](https://nearly.trade/last-2.nearlytrade.near), launched 2026-11-13 by `heavycat9990.near` |
+| Liquidity pool | Rhea DCL `last-2.nearlytrade.near\|wrap.near\|10000` (LP locked by Nearly) |
+| Fees to the jackpot | Creator share of the pool fees + 1% buy tax + 1% sell tax (100% of the creator side, 0% burn, 0% holders), routed to `pot.heavycat9990.near` by Nearly (`fee_to`, locked at launch), delivered every ~5 minutes. Nearly keeps its own platform share. |
+| Jackpot contract | `pot.heavycat9990.near`, source `contracts/last-pot`, Rust (`near-sdk` 5.30.1) |
+| Round rules | crown buy ≥ **0.5 NEAR**, timer **60 min** from the crown buy, winner gets **90%** of the available pot, 10% stays as the next round's seed |
+| Grace period | 2 min after the deadline before settlement, so a buy made in time but reported late still counts |
+| Payout | automatic transfer to the winner inside `settle_round`; if a transfer fails the prize stays claimable with `claim_reward` |
+| Admin powers | owner can only replace the reporter account and set the token id once; **nobody can withdraw the jackpot** |
+| Website | https://last-jackpot.vercel.app (source `apps/web`) |
+| License | MIT |
 
-**Bootstrap:** seed the market with a *real, separately accounted-for* testnet NEAR reserve: **3 NEAR proposed for the demo**, plus a separate storage/gas buffer. The seed NEAR is **market liquidity, not free-to-withdraw treasury funds**. Initial marginal spot price: about **0.000003 NEAR per LAST** before trades, fees or slippage; this is a thin test market and does not represent market valuation, guaranteed resale or a production price.
-
-For 48 hours, do **not** add team vesting, creator allocations, unlock schedules, airdrops, referral trees, dividends or automated liquidity migrations. This is an onchain game, not a promise of investment returns.
-
-## 4. Game rules — exact semantics
-
-- **Production concept:** 60 minutes rolling timer after each eligible buy.
-- **Testnet demo deployment:** 120 seconds, clearly labeled as a different immutable configuration.
-- **Eligible buy minimum:** **0.03 NEAR gross** for the 3 NEAR seed configuration. An amount below this may buy tokens but **never** changes the current leader/deadline. This is *not* reliable anti-bot protection.
-- **Buying** through `buy()` updates the AMM and pays the fee. An eligible purchase atomically becomes the latest buyer and moves the deadline to `block_timestamp + duration`.
-- **Selling**, transfers and self-transfers never change leader or deadline. A winning buyer **does not need to continue holding LAST** unless a future version explicitly changes the rules.
-- The **first eligible buy** activates a round and its pot includes the previous round's seeded reserve (plus fees accumulated while idle).
-- Once the deadline is reached, **all market trading pauses until `settle_round()`**. A purchase confirmed at or after expiry cannot rescue the previous round, even if its transaction was submitted earlier.
-- `settle_round()` is a permissionless, one-time state transition. It identifies the winner and moves the exact pot into their **claimable** balance. It **does not automatically transfer NEAR**.
-- After settlement, the next round awaits its first qualifying buy. Its seed is already segregated and accounted for; the old reward remains reserved for the previous winner.
-- `claim_reward(round_id)` pays the stored winner using an asynchronous transfer and a private callback: `AVAILABLE → IN_FLIGHT → PAID`, or `IN_FLIGHT → AVAILABLE` after a confirmed failure. Double claims are rejected.
-- No admin can edit a round's winner, timer, fee allocations or reserve balance retroactively.
-- **Bots are allowed by the protocol**; the game cannot honestly guarantee human-only participation, unbiased last-second inclusion or protection from all MEV strategies.
-
-The smart contract relies on NEAR's confirmed block timestamp, never on the browser countdown. A countdown on the web is an estimate until a transaction is confirmed.
-
-## 5. Architecture
-
-**One contract, internally modularized**. This avoids asynchronous coordination between separate token, market, and game contracts and ensures `buy() + accounting + leader update` happen together.
+## How it works
 
 ```text
-Wallet / NEAR Testnet
-  |
-  v
-React + TypeScript frontend  ---->  NEAR read-only RPC
-  |
-  +---- signed buy(amount, min_tokens_out)
-  +---- signed sell(amount, min_near_out)
-  +---- signed settle_round()
-  +---- signed claim_reward(round_id)
-  |
-  v
-Rust contract LAST
-  |-- NEP-141 / storage management (LAST balances)
-  |-- Internal x*y=k AMM (NEAR / LAST reserves)
-  |-- Fee ledgers (jackpot / next seed / treasury / ops)
-  |-- Round state (leader / deadline / settled)
-  |-- Async payout state and private callback
-  `-- Read-only methods, events
+players ──buy / sell $LAST──▶  Nearly token + Rhea DCL pool
+                                    │ creator fees + 1% buy/sell tax (every ~5 min)
+                                    ▼
+reporter bot ──record_buy──▶  pot.heavycat9990.near  ──90% of pot──▶ winner
+(scripts/reporter.py)         jackpot · timer · crown      settle_round (automatic)
+reads the token's txs         10% stays for the next round
 ```
 
-For a simple price quoted in NEAR per LAST, display the *current marginal price* inferred from reserves (not an oracle or a promise that a large trade can clear at this price). Before execution, show `quote_buy()` / `quote_sell()`, the percentage fee and minimum received after slippage.
+1. **Buy $LAST** on Nearly with at least 0.5 NEAR. You take the crown.
+2. **Every crown buy resets the clock** to 60 minutes. Smaller buys and sells never touch the crown.
+3. **If nobody buys before zero,** the last crown holder wins the round. Selling your $LAST does not cancel your win: the rule is purchase-based.
+4. **The contract pays the winner by itself:** `settle_round` sends 90% of the pot in the same call. The next crown buy starts a new round with the remaining 10% as its seed.
 
-### Public contract API to implement (proposed, not already deployed)
+### Why a reporter bot
 
-```text
-new(config)                         — one-time initialization and real bootstrap reserve
-buy(min_tokens_out)                — payable; use actual attached NEAR
-sell(tokens_in, min_near_out)       — sell LAST, credit withdrawable NEAR (pull payout)
-withdraw_near_credit()               — withdraw sale proceeds with async callback
-settle_round()                     — permissionless once the deadline passes
-claim_reward(round_id)             — winner only; async NEAR payout
-get_game_state()                   — leader, deadline, pots, round number
-get_round(round_id)                — winner, payout status, historical details
-get_market_state()                 — real X/Y market reserves and volume
-quote_buy(gross_near)               — preview before signing
-quote_sell(tokens_in)               — preview before signing
-get_account_state(account_id)       — LAST holding and claims summary
-ft_total_supply / ft_balance_of / ft_transfer / ft_transfer_call
-ft_metadata / storage_deposit / storage_balance_of / storage_withdraw
-```
+The token and its pool are Nearly's contracts: they send fees to the jackpot account but never call it, and a NEAR contract cannot read transaction history. So a reporter account watches the token's transactions and calls `record_buy(buyer, near_in, tx_hash, buy_timestamp_ns)` for every eligible buy, then `settle_round` when a round expires.
 
-The implementation must honor NEP-141's required interface and standard storage semantics; the listed names are targets, **not a claim that all FT methods have already been written**. Never calculate prices or rewards with JS `Number` or Rust floating point: use decimal strings / `u128` and verified wider multiplication for intermediate products.
+- **Buy detection:** a receipt on the token logs a NEP-141 `ft_transfer` **to the transaction signer**, and the NEAR spent is the sum of `wrap.near` "Transfer … from <signer>" logs in the same transaction. This covers Rhea DCL, Rhea v2 and aggregator routes and NEAR wrapped on the fly. Buys paid with another token are not eligible.
+- **What the reporter can do:** choose which buys are recorded. Every record carries the transaction hash, so anyone can check it on an explorer.
+- **What it cannot do:** move funds, change the rules, or create a winner without a matching buy record. Reports must be chronological and in the past; a buy after the deadline cannot extend a round; a stale buy cannot start a new one.
+- **Data sources:** FastNEAR transactions API (`tx.main.fastnear.com`) to list the token's transactions; public RPCs for contract views; near-cli to sign.
 
-### AMM accounting invariants
+## Verify it on-chain
 
-- A market buy increases native-NEAR **market reserve** by `gross - fee`; it decreases **market LAST inventory** by `tokens_out`.
-- A market sell decreases native-NEAR **market reserve** by `gross_near_out`; it increases **market LAST inventory** by `tokens_in`. `gross_near_out - fee` becomes the seller's withdrawable NEAR credit; the fee remains in its own buckets. `sell()` does not send an asynchronous payment in the critical market transaction.
-- All arithmetic must check overflow, underflow, zero outputs, slippage and liquidity remaining. Use `U256`/checked multi-precision intermediate multiplication.
-- The token inventory held by the market must match the token ledger; no hidden minting or creation by frontend.
-- All jackpot funds, next-round funds, unclaimed payouts, platform fees, treasury funds, storage refund liabilities and gas/storage buffers must be segregated from the tradable reserve. The contract's usable NEAR balance must **always cover the combined liabilities**.
-- Async withdrawals of **sale credits** and jackpot payouts require reservation + idempotent callback handling. `sell()` itself changes internal balances and creates a withdrawable credit; it does not send NEAR asynchronously. A successful promise transfer may not be treated as paid until the result is confirmed.
-- For any failed transaction, inspect its actual receipt and resulting state. Never assume a refund equals all attached gas.
-
-More precise invariants, edge cases and threat modeling are in [docs/SPEC_V2.md](docs/SPEC_V2.md).
-
-## 6. UI MVP
-
-The home screen must show the token and the game state without any wallet connection: **LAST**, NEAR/LAST indicative spot price, current round, last buyer, countdown, jackpot in NEAR, next-round seed, volume, eligible purchases, recent activity, current user's holdings (if connected), previous winner and round history.
-
-With a wallet connected, the player can quote and sign a buy, quote and sign a sell, **withdraw the resulting NEAR credit**, settle an expired round and claim a confirmed reward. Show network, storage registration prerequisites, exact fee, slippage, transaction pending/failed/successful states and a link to the explorer. Use real contract views; use **clearly labeled mock states only for isolated local UI development**, never on a public testnet dashboard.
-
-**Accessibility:** responsive layout, legible countdown, `prefers-reduced-motion`, visible zero jackpot/zero buyer empty states. Visual inspiration: polished memecoin launchpad, not a fake trading terminal.
-
-## 7. Repo structure and team of two
-
-```text
-last/
-├── README.md                  # This file — project contract for the team
-├── CLAUDE.md                  # Shared coding-agent rules
-├── .gitignore
-├── contracts/
-│   └── last/
-│       ├── Cargo.toml
-│       └── src/
-│           ├── lib.rs         # entry points / initialization
-│           ├── token.rs       # NEP-141 standard
-│           ├── market.rs      # quotes + buy/sell + reserves
-│           ├── game.rs        # round lifecycle
-│           ├── accounting.rs  # liabilities and fees
-│           ├── payouts.rs     # claim and callbacks
-│           └── events.rs      # JSON events
-├── apps/
-│   └── web/
-│       ├── src/
-│       │   ├── components/
-│       │   ├── hooks/
-│       │   ├── lib/
-│       │   └── pages/
-│       └── package.json
-├── tests/
-│   └── integration/           # near-workspaces sandbox scenarios
-├── scripts/                   # reproducible dev/testnet operations
-└── docs/
-    ├── SPEC_V2.md
-    ├── ECONOMICS.md
-    └── TEST_PLAN.md
-```
-
-**Developer A — Rust/contracts, 55%:** token standard, market formulas and balances, fee accounting, round machine, secure claims and tests. **Developer B — frontend/integration, 45%:** wallet connection, full dashboard, quote/trade UX, explorer links, reproducible demo and README. Both coordinate on `docs/CONTRACT_API.md` before implementing UI and jointly test NEAR Testnet.
-
-Git: `main`, `feat/contracts`, `feat/web`. No automatic `main` merge, deployment or wallet signature without approval.
-
-## 8. 48-hour execution plan
-
-| Hours | Contracts (A) | Frontend / QA (B) | Gate |
-|---|---|---|---|
-| 0–4 | Init contract and economic invariants | Setup web, wallet, design | API agreed, no implementation claims |
-| 4–14 | FT storage + buy / sell + fee bookkeeping | Dashboard with explicit mocks | Unit AMM tests pass |
-| 14–24 | Round state + settlement + payout callbacks | Wallet, quotes, signed buys | Sandbox buy→round→settle→claim |
-| 24–34 | Hardening, integration & sandbox | Real contract data, error handling | All critical tests pass |
-| 34–42 | Authorized NEAR Testnet deploy and receipts | End-to-end live testnet demo | Real tx hashes and visible balances |
-| 42–48 | Audit, regression tests, release docs | Video, screenshot, X demo post | Complete reproducible submission |
-
-If time runs short: **must keep** buy, qualify, reset, settle, claim, storage, accounting, UI confirmation, true testnet receipts. **Cut** sell only as an explicitly disclosed emergency fallback (then LAST becomes a one-way testnet game, not a complete market), analytics, leaderboard, bots, liquidity migration, treasury withdrawals, animated charts, custom NFTs and token mint mechanics. Do **not** fake sell support or a working DEX.
-
-## 9. Acceptance tests (minimum)
-
-1. Wallet A makes an eligible 0.03 NEAR buy: becomes leader; expires in configured duration.
-2. Wallet B buys at least 0.03 NEAR: becomes leader, timer resets.
-3. A purchase below 0.03 NEAR changes balances and fees but not leader/deadline.
-4. A sale never changes leader/deadline; its NEAR proceeds become a separately withdrawable credit.
-5. A purchase at or after expiry cannot overwrite the settled winner; it is rejected until settlement.
-6. Any account can settle a round only after expiry.
-7. A round cannot settle twice; old funds cannot be reused by the next round.
-8. Only the recorded winner can claim; second claim cannot pay twice.
-9. Failed claim transfer results in an accurately reconciled claim state.
-10. `quote_buy`, `quote_sell`, buy/sell execution and available reserve obey integer rounding and slippage boundaries.
-11. Storage deposits, registrations, NEP-141 transfers and their funding remain correct.
-12. Physical NEAR balance covers market reserve plus each explicitly reserved liability after every successful operation.
-13. Multi-wallet integration test produces real NEAR Testnet transaction receipts (separate from mocks and sandbox tests).
-
-## 10. Local setup — planned commands, to be enabled by developers
-
-**Prerequisites:** Ubuntu/WSL or Linux for Rust sandbox tests, Rust toolchain, WASM target, `cargo-near`, Node.js LTS, pnpm, and an authorized NEAR Testnet wallet. Pin versions in lockfiles after validation. Never paste or commit private keys or `.env` secrets.
+Read-only, no wallet needed ([near-cli-rs](https://github.com/near/near-cli-rs)):
 
 ```bash
-# From the initialized project root, once the code and manifests have been written:
-cargo test --manifest-path contracts/last/Cargo.toml
-cd contracts/last && cargo near build && cd ../..
-pnpm install
+near contract call-function as-read-only pot.heavycat9990.near get_state json-args '{}' network-config mainnet now
+near contract call-function as-read-only pot.heavycat9990.near get_config json-args '{}' network-config mainnet now
+near contract call-function as-read-only pot.heavycat9990.near get_round json-args '{"round_id":"1"}' network-config mainnet now
+```
+
+`get_state` returns the status (`IDLE` / `ACTIVE` / `EXPIRED`), the crown holder, the deadline (ns), the pot, the current prize, the hash of the last crown buy, and totals. Contract events are logged as `EVENT_JSON` with standard `last-pot` (`round_started`, `buy_recorded`, `round_settled`, `payout`, `token_set`, `reporter_changed`).
+
+| Deployment record | Value |
+|---|---|
+| Deploy + init tx | [`EvahQHgSZbYfbmQricYQRgG9hWASvmY1s8wEWxsSx6Lg`](https://nearblocks.io/txns/EvahQHgSZbYfbmQricYQRgG9hWASvmY1s8wEWxsSx6Lg) |
+| On-chain code hash | `7R8M7jsAcY3AyPEr9FkWNRJLgtDpAEwuZmfkkawzUN8m` = sha256 `5f545e39…f8fe` of the WASM built from `contracts/last-pot` |
+| Token launch tx | [`DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp`](https://nearblocks.io/txns/DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp) (`fee_to` = `pot.heavycat9990.near`) |
+| Token id recorded | [`9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU`](https://nearblocks.io/txns/9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU) |
+| First crown buy recorded | [`6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq`](https://nearblocks.io/txns/6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq) (10 NEAR buy by `wrapz-z.near`, tx `5H7PAmLC…`) |
+
+More detail: [`docs/MAINNET_POT.md`](docs/MAINNET_POT.md).
+
+## Repository
+
+```text
+contracts/last-pot/     Jackpot contract (Rust, near-sdk 5.30.1): rounds, record_buy, settle_round + payout, views
+  src/lib.rs            contract
+  src/tests.rs          23 unit tests
+scripts/reporter.py     Reporter bot (Python 3, stdlib only + near-cli for signing)
+apps/web/               Jackpot website (React 19 + Vite + Tailwind 4), reads the contract over public RPC
+  src/pot/              page, contract reader, polling hook
+brand/                  Token logo (PNG) and generator
+docs/MAINNET_POT.md     Architecture, trust model, parameters, deployment runbook
+```
+
+## Build and test
+
+Contract (Linux/WSL; on Windows the `near-sdk` test feature needs NASM + CMake, so use WSL):
+
+```bash
+cargo test --manifest-path contracts/last-pot/Cargo.toml
+cd contracts/last-pot && cargo near build non-reproducible-wasm --no-abi
+```
+
+Website:
+
+```bash
+pnpm --dir apps/web install
+pnpm --dir apps/web test
 pnpm --dir apps/web dev
 ```
 
-These commands represent the **target developer workflow** and cannot work until the source, Cargo manifest and frontend package exist. Do not mark tests passing or show deployment hashes until actual execution.
+Reporter (needs the reporter account key in the near-cli legacy keychain; `--dry-run` signs nothing):
 
-## 11. Testnet demo checklist
+```bash
+python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytrade.near --reporter heavycat9990.near --dry-run
+```
 
-- [x] Rust unit tests and contract WASM build passed (63 unit tests, 239 KB WASM)
-- [x] Sandbox integration tests passed, including payouts and state invariants (`tests/integration`)
-- [x] One NEAR Testnet contract deployed, contract ID recorded: `last-armand.testnet` (see `docs/DEPLOYMENT.md`)
-- [ ] Two distinct testnet wallets used, with contract storage funded — **still to do**: the 2026-11-12 run used one account for both roles
-- [x] Two signed eligible buys with transaction links (`docs/DEPLOYMENT.md`; same signer, see next item)
-- [x] Ineligible dust buy observed and rejected for timer purposes
-- [x] A sale observed without changing the leader
-- [x] `settle_round` after expiration with an explorer link
-- [x] Actual jackpot claim and rejected second claim, both documented (`docs/GATE4_REPORT.md`)
-- [x] Real NEAR balance and reserve reconciliation documented (12 invariants, `scripts/gate4.mjs`)
-- [ ] README updated with commands, outputs, architecture and deployed addresses
-- [ ] GitHub public, LICENSE present, AI-generated/pre-existing code credited
-- [ ] Demo video and public X post as required by NEAR Hackathon 2026
+## Limitations and risks
 
-Official deadline: **14 November 2026, 23:59 UTC**. Check the official live rules before submitting: https://nearhackathon.com/HACKATHON.md
+- **The reporter is a trusted, single operator.** It records buys and triggers settlement. If it stops, rounds are not updated until it restarts (it resumes from its saved cursor); a buy reported more than 60 minutes late no longer counts. `settle_round` itself is permissionless: anyone can call it after the deadline.
+- **Fees arrive in batches (~5 min),** so fees from the last minutes of a round can land in the next round's pot.
+- **Only buys paid in NEAR/wNEAR count** toward the crown.
+- **Bots and multiple wallets can play.** There is no fairness or anti-sniping guarantee; transaction ordering and last-second buys are part of the game.
+- **The contract is unaudited,** and its account keeps a full-access key, so the code could still be redeployed by its owner. It is not immutable yet.
+- **This is a high-risk experimental memecoin.** Price moves, fees and competition can cause losses. Only risk what you can afford to lose. Not financial advice.
 
-## 12. Risks and legal notice
+## Team and credits
 
-This demo is a high-risk, prize-based trading game. Last-second bots, multiple wallets controlled by one player, transaction ordering, price volatility, thin liquidity, network failure, gas, and fee compounding can cause losses. **No fair-access, anti-bot, price stability or profitability guarantee.** FOMO3D-style games have previously experienced block-congestion attacks; LAST does not claim to eliminate all such strategies.
+- **armand418** — jackpot contract, reporter bot, mainnet deployment, website.
+- **nielslecodeur** — frontend and on-chain integration work.
 
-**Testnet only — no monetary value.** A real-money launch may fall under gambling regulation. The French ANJ describes four relevant criteria: a public offer, a financial sacrifice, a chance-based element and an expectation of gain. JONUM rules are not automatic authorization for a NEAR jackpot. Obtain professional legal advice before any public mainnet offer.
+**AI-assisted development:** code, tests and docs were written with Claude Code (Anthropic) under human review; commits made with it carry a `Co-Authored-By: Claude` trailer. Product, economic and deployment decisions were made by the team.
 
-The contract is unaudited. Do not handle real funds without a full independent security review.
+**Libraries:** [`near-sdk`](https://github.com/near/near-sdk-rs) (MIT or Apache-2.0), React, Vite, Tailwind CSS, Vitest (MIT), [near-cli-rs](https://github.com/near/near-cli-rs) and [cargo-near](https://github.com/near/cargo-near) (MIT or Apache-2.0). Fonts: IBM Plex Mono, Anton (SIL OFL). Infrastructure: [Nearly](https://nearly.trade) launchpad, Rhea Finance DCL pool, FastNEAR APIs. Palette inspired by the NEAR Hackathon site.
 
-20% of fees (treasury + ops) have no withdraw path in the deployed code, and the contract account keeps a full-access key, so the contract can be replaced by its owner: it is **not immutable**. The starting pot carried into a new round can be captured by a lone first buyer when nobody else plays (see "Current status, roadmap and disclosures").
+**Prior art:** the last-buyer-wins timer comes from FOMO3D (2018) and its variants; $LAST adapts it to a NEAR memecoin whose trading fees fund the jackpot.
 
-## 13. Research references (checked 12 Nov 2026)
+## License
 
-- NEAR Hackathon: https://nearhackathon.com/HACKATHON.md
-- NEAR Fungible Token standard: https://github.com/near/NEPs/blob/master/neps/nep-0141.md
-- Official Rust FT example: https://github.com/near-examples/FT
-- NEAR contract SDK: https://github.com/near/near-sdk-rs
-- NEAR Workspaces: https://github.com/near/near-workspaces-rs
-- NEAR Wallet Selector (check HOT Connect recommendation): https://github.com/near/wallet-selector
-- Pump.fun fee schedule: https://pump.fun/docs/fees
-- Meme.Cooking fees: https://docs.meme.cooking/other/fees/
-- ClawFomo game example: https://github.com/clawdbotatg/clawd-fomo3d-v2
-- Fomo3D modern variant (not original 2018 contract): https://fomo3d.app/en/rules
-- FOMO3D 2018 historical overview: https://www.theblock.co/news/ecosystems/2019-08-14-blockchain-gaming-part-iii-protocol-led-second-generation-games-36054
-- French ANJ gambling criteria: https://anj.fr/professionnels/porteur-de-projet
-- French ANJ JONUM framework: https://anj.fr/jeux-objets-numeriques-monetisables-jonum
-
-## 14. License and credits
-
-**License:** [MIT](LICENSE), © 2026 armand418 and nielslecodeur. The software is provided "as is", without warranty; this does not replace the risk and legal notice in §12.
-
-**Team:** armand418 (Developer A — contract, sandbox tests, testnet deployment) and nielslecodeur (Developer B — frontend, wallet integration, testnet demo run).
-
-**AI-generated code:** both developers used Claude Code (Anthropic, model Claude Opus 5.5) to write a large part of the code, tests and documentation, under human review. Commits produced with it carry a `Co-Authored-By: Claude` trailer. The specification, economic choices and every deploy/signature decision were made by the developers.
-
-**Pre-existing libraries (not written by us):**
-
-| Library | Used for | License |
-|---|---|---|
-| [`near-sdk`](https://github.com/near/near-sdk-rs) 5.30.1 | Contract SDK | MIT or Apache-2.0 |
-| [`near-contract-standards`](https://github.com/near/near-sdk-rs) 5.30.1 | NEP-141/145/148 fungible token implementation (`FungibleToken`) | MIT or Apache-2.0 |
-| [`uint`](https://github.com/paritytech/parity-common) 0.10.2 | 256-bit integers for AMM math | MIT or Apache-2.0 |
-| [`near-workspaces`](https://github.com/near/near-workspaces-rs) 0.24.0, `tokio`, `anyhow`, `serde_json` | Sandbox integration tests | MIT or Apache-2.0 (`tokio`: MIT) |
-| `cargo-near`, `near-cli-rs` | WASM build and testnet deployment tooling | MIT or Apache-2.0 |
-
-Frontend (`apps/web`, exact versions in `apps/web/package.json` / `pnpm-lock.yaml`):
-
-| Library | Used for | License |
-|---|---|---|
-| [`react`, `react-dom`](https://github.com/facebook/react) 19.3.1 | UI | MIT |
-| [`@hot-labs/near-connect`](https://github.com/hot-dao/near-selector) 0.12.0 | NEAR wallet connection (testnet) | MIT |
-| [`vite`](https://github.com/vitejs/vite) 8.2.6, `@vitejs/plugin-react` 6.2.1 | Dev server and build | MIT |
-| [`tailwindcss`, `@tailwindcss/vite`](https://github.com/tailwindlabs/tailwindcss) 4.3.5 | Styling | MIT |
-| [`typescript`](https://github.com/microsoft/TypeScript) 6.0.3 | Type checking | Apache-2.0 |
-| [`vitest`](https://github.com/vitest-dev/vitest) 5.0.5, `jsdom` 30.1.3, `@testing-library/react` 16.3.3 | Tests | MIT |
-| Space Grotesk, JetBrains Mono (Google Fonts) | Typography | SIL Open Font License 1.1 |
-
-Public NEAR Testnet RPC used by the web app (read-only views): FastNEAR, then dRPC as fallback.
-
-**Prior art:** the last-buyer-wins timer mechanic is not ours; see the FOMO3D, Fomo3D and ClawFomo references in §13.
-
-**One-line design principle:** Never show an onchain game result that cannot be reconstructed from real contract state and transaction receipts.
+[MIT](LICENSE), © 2026 armand418 and nielslecodeur.

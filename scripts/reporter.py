@@ -37,7 +37,7 @@ import urllib.request
 
 TX_API = "https://tx.main.fastnear.com/v0"
 # Public RPC endpoints, tried in order (rate limits are per endpoint).
-RPCS = ["https://free.rpc.fastnear.com", "https://rpc.mainnet.near.org", "https://near.lava.build"]
+RPCS = ["https://near.drpc.org", "https://rpc.ankr.com/near", "https://archival-rpc.mainnet.fastnear.com", "https://free.rpc.fastnear.com"]
 WRAP = "wrap.near"
 WRAP_TRANSFER = re.compile(r"^Transfer (\d+) from (\S+) to (\S+)$")
 POLL_S = 10
@@ -216,9 +216,17 @@ def main():
     st: dict = {}
     st_at = 0.0
 
+    beat_at = 0.0
+
     def refresh():
-        nonlocal st, st_at
+        nonlocal st, st_at, beat_at
         st, st_at = view(a.pot, "get_state"), time.time()
+        if st_at - beat_at >= 300:  # heartbeat every 5 min
+            beat_at = st_at
+            left = ""
+            if st.get("deadline_ns"):
+                left = f" | {max(0, int(st['deadline_ns']) - int(st['now_ns'])) // 60_000_000_000} min left"
+            log(f"alive: {st['status']} round {st['round_id']} | leader {st.get('leader')}{left} | pot {int(st['pot']) / 1e24:.4f} NEAR")
 
     def record(tx: str, buyer: str, ts: int, near_in: int):
         call(a.pot, "record_buy", {"buyer": buyer, "near_in": str(near_in), "tx_hash": tx, "buy_timestamp_ns": str(ts)}, a.reporter, a.dry_run)
