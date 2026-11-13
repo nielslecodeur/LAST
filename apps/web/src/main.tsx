@@ -10,6 +10,19 @@ import { HotConnectWriter, type LastWriter } from "./lib/wallet";
 import "./index.css";
 
 async function boot() {
+  const root = createRoot(document.getElementById("root")!);
+
+  // Public mainnet site: the jackpot page reading contracts/last-pot (VITE_SITE=pot).
+  if ((import.meta.env as Record<string, string | undefined>).VITE_SITE === "pot") {
+    const { PotApp } = await import("./pot/PotApp");
+    root.render(
+      <StrictMode>
+        <PotApp />
+      </StrictMode>,
+    );
+    return;
+  }
+
   let reader: LastReader | null = null;
   let writer: LastWriter | null = null;
 
@@ -26,7 +39,7 @@ async function boot() {
     writer = new HotConnectWriter(config.rpcUrls);
   }
 
-  createRoot(document.getElementById("root")!).render(
+  root.render(
     <StrictMode>
       <LastProvider config={config} reader={reader} writer={writer}>
         <App />
