@@ -82,6 +82,18 @@ pub fn prize_claim(round_id: u64, winner: &AccountId, amount: u128, status: &str
     );
 }
 
+/// `status`: "IN_FLIGHT" | "PAID" | "FAILED". Crown Economy V2 platform share.
+pub fn platform_withdraw(account_id: &AccountId, amount: u128, status: &str) {
+    emit(
+        "platform_withdraw",
+        json!({
+            "account_id": account_id,
+            "amount": U128(amount),
+            "status": status,
+        }),
+    );
+}
+
 /// `status`: "IN_FLIGHT" | "PAID" | "FAILED".
 pub fn credit_withdraw(account_id: &AccountId, amount: u128, status: &str) {
     emit(

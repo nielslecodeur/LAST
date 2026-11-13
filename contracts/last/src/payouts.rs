@@ -35,6 +35,13 @@ pub struct WithdrawResult {
 
 #[near(serializers = [json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlatformWithdrawResult {
+    pub amount: U128,
+    pub success: bool,
+}
+
+#[near(serializers = [json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimResult {
     pub round_id: U64,
     pub amount: U128,
@@ -185,5 +192,50 @@ impl LastContract {
         }
         self.rounds.insert(round_id.0, round);
         ClaimResult { round_id, amount: U128(amount), success }
+    }
+
+    /// Crown Economy V2: the platform (`platform_id` only) withdraws its 5% fee share.
+    ///
+    /// Only `ops_reserve` can be touched: never the market reserve, pots, credits or prizes.
+    /// The amount leaves `ops_reserve` *before* the transfer promise, so a second request can only
+    /// take what is left (no double withdrawal) and, while in flight, the obligation and the balance
+    /// both dropped by the same amount (solvency stays exact). On a failed transfer the private
+    /// callback puts it back. `amount = None` withdraws the whole share.
+    #[payable]
+    pub fn withdraw_platform_fees(&mut self, amount: Option<U128>) -> Promise {
+        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "ERR_ONE_YOCTO");
+        let caller = env::predecessor_account_id();
+        require!(caller == self.platform_id, "ERR_FORBIDDEN");
+        let available = self.ledger.ops_reserve;
+        let amount = amount.map_or(available, |a| a.0);
+        require!(amount > 0, "ERR_ZERO_AMOUNT");
+        require!(amount <= available, "ERR_INSUFFICIENT_PLATFORM_FEES");
+
+        self.ledger.ops_reserve = sub(available, amount);
+        events::platform_withdraw(&caller, amount, "IN_FLIGHT");
+
+        let promise = Promise::new(caller)
+            .transfer(NearToken::from_yoctonear(amount))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_PAYOUT_CALLBACK)
+                    .on_platform_withdraw_complete(U128(amount)),
+            );
+        self.assert_solvent();
+        promise
+    }
+
+    /// Never panics. `#[private]`: only this contract's own promise can call it, with the amount it
+    /// reserved, so a failure is restored exactly once.
+    #[private]
+    pub fn on_platform_withdraw_complete(&mut self, amount: U128) -> PlatformWithdrawResult {
+        let success = transfer_succeeded();
+        if success {
+            events::platform_withdraw(&self.platform_id, amount.0, "PAID");
+        } else {
+            self.ledger.ops_reserve = add(self.ledger.ops_reserve, amount.0);
+            events::platform_withdraw(&self.platform_id, amount.0, "FAILED");
+        }
+        PlatformWithdrawResult { amount, success }
     }
 }

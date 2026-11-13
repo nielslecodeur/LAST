@@ -2,6 +2,12 @@
 //!
 //! Every yoctoNEAR the contract owes is in exactly one bucket of [`Ledger`]. Fees are split with
 //! integer floors and the remainder goes to the treasury, so `split_fee(f).total() == f` always.
+//!
+//! Crown Economy V2 (docs/LAST_Crown_Economy_Tokenomics_V2.md, model C): 85% current jackpot,
+//! 10% next-round starting pot, 0% treasury, 5% platform. The treasury share is 0: it only
+//! receives the integer-division remainder (at most 2 yoctoNEAR per fee), per the project rule
+//! "remainders go to the treasury bucket". The platform share is withdrawable by `platform_id`
+//! (payouts.rs `withdraw_platform_fees`); in V1 it was locked forever.
 
 use near_sdk::near;
 
@@ -11,9 +17,12 @@ pub const BPS: u128 = 10_000;
 pub const BUY_FEE_BPS: u128 = 400;
 pub const SELL_FEE_BPS: u128 = 200;
 
-pub const JACKPOT_SHARE: u128 = 7_000;
+/// Identifier of the fee model, exposed by `get_economics`.
+pub const ECONOMICS_MODEL: &str = "crown-economy-v2";
+
+pub const JACKPOT_SHARE: u128 = 8_500;
 pub const NEXT_SEED_SHARE: u128 = 1_000;
-pub const TREASURY_SHARE: u128 = 1_500;
+pub const TREASURY_SHARE: u128 = 0;
 pub const OPS_SHARE: u128 = 500;
 
 const _: () = assert!(JACKPOT_SHARE + NEXT_SEED_SHARE + TREASURY_SHARE + OPS_SHARE == BPS);
@@ -38,12 +47,13 @@ impl FeeSplit {
     }
 }
 
-/// 70 / 10 / 15 / 5 split of a fee; rounding remainder → treasury.
+/// 85 / 10 / 0 / 5 split of a fee; rounding remainder → treasury.
 pub fn split_fee(fee: u128) -> FeeSplit {
     let jackpot = mul_div(fee, JACKPOT_SHARE, BPS);
     let next_seed = mul_div(fee, NEXT_SEED_SHARE, BPS);
     let ops = mul_div(fee, OPS_SHARE, BPS);
     // Cannot underflow: each floor(fee * s / BPS) <= fee * s / BPS and the shares sum to BPS.
+    // TREASURY_SHARE is 0, so the treasury gets exactly the rounding remainder.
     let treasury = fee - jackpot - next_seed - ops;
     FeeSplit { jackpot, next_seed, treasury, ops }
 }
@@ -120,9 +130,10 @@ mod tests {
         let fee = fee_of(one_near, BUY_FEE_BPS);
         assert_eq!(fee, 4 * 10u128.pow(22)); // 0.04 NEAR
         let s = split_fee(fee);
-        assert_eq!(s.jackpot, 28 * 10u128.pow(21)); // 0.028
+        // Crown Economy V2 example (doc §3): 0.034 / 0.004 / 0 / 0.002
+        assert_eq!(s.jackpot, 34 * 10u128.pow(21)); // 0.034
         assert_eq!(s.next_seed, 4 * 10u128.pow(21)); // 0.004
-        assert_eq!(s.treasury, 6 * 10u128.pow(21)); // 0.006
+        assert_eq!(s.treasury, 0);
         assert_eq!(s.ops, 2 * 10u128.pow(21)); // 0.002
     }
 
@@ -134,7 +145,7 @@ mod tests {
         let s = split_fee(fee);
         assert_eq!(
             (s.jackpot, s.next_seed, s.treasury, s.ops),
-            (14 * 10u128.pow(21), 2 * 10u128.pow(21), 3 * 10u128.pow(21), 10u128.pow(21))
+            (17 * 10u128.pow(21), 2 * 10u128.pow(21), 0, 10u128.pow(21))
         );
     }
 
@@ -143,7 +154,9 @@ mod tests {
         for fee in [0u128, 1, 2, 3, 7, 9, 13, 19, 99, 10_001, 123_456_789, u128::MAX] {
             let s = split_fee(fee);
             assert_eq!(s.total(), fee, "fee {fee}");
-            assert_eq!(s.jackpot, fee / 10_000 * 7_000 + (fee % 10_000) * 7_000 / 10_000);
+            assert_eq!(s.jackpot, fee / 10_000 * 8_500 + (fee % 10_000) * 8_500 / 10_000);
+            // Treasury share is 0: it only ever holds the remainder of the three floors.
+            assert!(s.treasury <= 2, "fee {fee}: treasury {}", s.treasury);
         }
         // fee = 1: everything floors to 0 except treasury.
         assert_eq!(split_fee(1), FeeSplit { jackpot: 0, next_seed: 0, treasury: 1, ops: 0 });
@@ -167,9 +180,9 @@ mod tests {
     fn active_fee_goes_to_pot() {
         let mut l = Ledger::default();
         l.allocate_fee(1_000_000, true);
-        assert_eq!(l.active_pot, 700_000);
+        assert_eq!(l.active_pot, 850_000);
         assert_eq!(l.next_seed_pot, 100_000);
-        assert_eq!(l.treasury_reserve, 150_000);
+        assert_eq!(l.treasury_reserve, 0);
         assert_eq!(l.ops_reserve, 50_000);
     }
 }

@@ -489,3 +489,4 @@ fn integrity_view_reports_surplus() {
 }
 
 mod gate2;
+mod crown;

@@ -106,6 +106,24 @@ pub struct AccountStateView {
     pub claimable_rounds: Vec<U64>,
 }
 
+/// Fee model, read from the chain by the frontend instead of hard-coding the split.
+#[near(serializers = [json])]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EconomicsView {
+    pub model: String,
+    pub buy_fee_bps: u16,
+    pub sell_fee_bps: u16,
+    /// Shares of each fee, in bps of the fee; they sum to 10000.
+    pub jackpot_bps: u16,
+    pub next_seed_bps: u16,
+    pub treasury_bps: u16,
+    pub platform_bps: u16,
+    /// Bucket receiving the integer-division remainder.
+    pub remainder_to: String,
+    /// Whether `platform_id` can withdraw the platform share (`withdraw_platform_fees`).
+    pub platform_withdrawable: bool,
+}
+
 #[near(serializers = [json])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RolesView {
@@ -205,7 +223,22 @@ impl LastContract {
         }
     }
 
-    /// Disclosed roles. None of them can change game outcome, fees, supply or reserves.
+    pub fn get_economics(&self) -> EconomicsView {
+        EconomicsView {
+            model: accounting::ECONOMICS_MODEL.to_string(),
+            buy_fee_bps: accounting::BUY_FEE_BPS as u16,
+            sell_fee_bps: accounting::SELL_FEE_BPS as u16,
+            jackpot_bps: accounting::JACKPOT_SHARE as u16,
+            next_seed_bps: accounting::NEXT_SEED_SHARE as u16,
+            treasury_bps: accounting::TREASURY_SHARE as u16,
+            platform_bps: accounting::OPS_SHARE as u16,
+            remainder_to: "treasury".to_string(),
+            platform_withdrawable: true,
+        }
+    }
+
+    /// Disclosed roles. None of them can change game outcome, fees, supply or reserves. The only
+    /// privileged call is `platform_id` withdrawing the platform fee share (`ops_reserve`).
     pub fn get_roles(&self) -> RolesView {
         RolesView {
             owner_id: self.owner_id.clone(),
