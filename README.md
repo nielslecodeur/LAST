@@ -101,7 +101,7 @@ These figures illustrate **fee allocation only**, not trading profits, expected 
 
 **Bootstrap:** seed the market with a *real, separately accounted-for* testnet NEAR reserve: **3 NEAR proposed for the demo**, plus a separate storage/gas buffer. The seed NEAR is **market liquidity, not free-to-withdraw treasury funds**. Initial marginal spot price: about **0.000003 NEAR per LAST** before trades, fees or slippage; this is a thin test market and does not represent market valuation, guaranteed resale or a production price.
 
-For 48 hours, do **not** add team vesting, creator allocations, unlock schedules, airdrops, referral trees, dividends or automated liquidity migrations. This is an onchain game, not a promise of investment returns.
+V2 deliberately has **no** team vesting, creator allocations, unlock schedules, airdrops, referral trees, dividends or automated liquidity migrations. This is an onchain game, not a promise of investment returns.
 
 ## 4. Game rules — exact semantics
 
@@ -227,18 +227,18 @@ last/
 
 Git: `main`, `feat/contracts`, `feat/web`. No automatic `main` merge, deployment or wallet signature without approval.
 
-## 8. 48-hour execution plan
+## 8. Delivery milestones
 
-| Hours | Contracts (A) | Frontend / QA (B) | Gate |
+| Milestone | Contracts (A) | Frontend / QA (B) | Gate |
 |---|---|---|---|
-| 0–4 | Init contract and economic invariants | Setup web, wallet, design | API agreed, no implementation claims |
-| 4–14 | FT storage + buy / sell + fee bookkeeping | Dashboard with explicit mocks | Unit AMM tests pass |
-| 14–24 | Round state + settlement + payout callbacks | Wallet, quotes, signed buys | Sandbox buy→round→settle→claim |
-| 24–34 | Hardening, integration & sandbox | Real contract data, error handling | All critical tests pass |
-| 34–42 | Authorized NEAR Testnet deploy and receipts | End-to-end live testnet demo | Real tx hashes and visible balances |
-| 42–48 | Audit, regression tests, release docs | Video, screenshot, X demo post | Complete reproducible submission |
+| Specification | Contract API and economic invariants | Web setup, wallet, design | API agreed, no implementation claims |
+| Market | FT storage + buy / sell + fee bookkeeping | Dashboard with explicit mocks | Unit AMM tests pass |
+| Game and payouts | Round state + settlement + payout callbacks | Wallet, quotes, signed buys | Sandbox buy→round→settle→claim |
+| Hardening | Integration and sandbox scenarios | Real contract data, error handling | All critical tests pass |
+| Testnet | Authorized NEAR Testnet deploy and receipts | End-to-end live testnet demo | Real tx hashes and visible balances |
+| Submission | Regression tests, release docs | Video, screenshot, X demo post | Complete reproducible submission |
 
-If time runs short: **must keep** buy, qualify, reset, settle, claim, storage, accounting, UI confirmation, true testnet receipts. **Cut** sell only as an explicitly disclosed emergency fallback (then LAST becomes a one-way testnet game, not a complete market), analytics, leaderboard, bots, liquidity migration, treasury withdrawals, animated charts, custom NFTs and token mint mechanics. Do **not** fake sell support or a working DEX.
+Scope priorities: **must keep** buy, qualify, reset, settle, claim, storage, accounting, UI confirmation, true testnet receipts. **Cut** sell only as an explicitly disclosed emergency fallback (then LAST becomes a one-way testnet game, not a complete market), analytics, leaderboard, bots, liquidity migration, treasury withdrawals, animated charts, custom NFTs and token mint mechanics. Do **not** fake sell support or a working DEX.
 
 ## 9. Acceptance tests (minimum)
 
