@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@hot-labs/near-connect':
-        specifier: 0.12.0
-        version: 0.12.0
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -128,9 +125,6 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
-
-  '@hot-labs/near-connect@0.12.0':
-    resolution: {integrity: sha512-aBb1UPGr43tHPsj/uk3fEwCn83Y7+cO6Ct8B6G/dm9EkTwXh9/xntXyWhQ6fA1eSt2WtYqSczOCENXlrBAXZqg==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -916,8 +910,6 @@ snapshots:
     optional: true
 
   '@exodus/bytes@1.16.0': {}
-
-  '@hot-labs/near-connect@0.12.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

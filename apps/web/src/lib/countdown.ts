@@ -7,7 +7,8 @@
  * Time values are not money; converting nanosecond deltas (< 2^53 ms) to Number is safe here.
  */
 
-import type { GameStatus } from "./types";
+/** Jackpot status as reported by the contract (`get_state.status`). */
+type GameStatus = "IDLE" | "ACTIVE" | "EXPIRED";
 
 export const NS_PER_MS = 1_000_000n;
 

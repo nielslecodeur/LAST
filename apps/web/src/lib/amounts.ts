@@ -110,7 +110,7 @@ export function parseU64(raw: unknown, field = "value"): bigint {
 /**
  * Marginal spot price, in yoctoNEAR per 1 whole LAST:
  * (near_reserve / 10^24) / (last_inventory / 10^18) NEAR = near_reserve * 10^18 / last_inventory yocto.
- * Indicative only (CONTRACT_API §3); a trade moves the price.
+ * Indicative only; a trade moves the price.
  */
 export function spotPriceYoctoPerLast(nearReserve: bigint, lastInventory: bigint): bigint {
   if (lastInventory === 0n) return 0n;

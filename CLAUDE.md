@@ -1,49 +1,38 @@
-# CLAUDE.md — shared rules for coding agents on LAST
+# CLAUDE.md — rules for coding agents on $LAST
 
-Read `README.md` (public promise) and `docs/SPEC_V2.md` (engineering contract) before changing code. The contract interface lives in `docs/CONTRACT_API.md`; contracts and frontend must both follow it, and any change to it is agreed by both developers first.
-
-## Team and branches
-
-- Developer A — `contracts/last`, `tests/integration`, branch `feat/contracts`.
-- Developer B — `apps/web`, branch `feat/web`.
-- `main` only receives merges at agreed checkpoints. No agent merges into `main`, pushes, deploys or signs a transaction without explicit human approval.
-- Do not edit the other developer's area or shared lockfiles without coordinating.
+Read `README.md` first, then `docs/MAINNET_POT.md`. $LAST runs on **NEAR mainnet**: the token `last-2.nearlytrade.near` (Nearly launchpad), the jackpot contract `pot.heavycat9990.near` (`contracts/last-pot`), the reporter bot (`scripts/reporter.py`) and the website (`apps/web`, deployed at https://last-jackpot.vercel.app).
 
 ## Hard rules
 
-- **NEAR Testnet only.** Never touch mainnet, never automate real payments.
-- **Never** print, paste or commit private keys, seed phrases, `.env` secrets or `~/.near-credentials`.
-- Money is integers: yoctoNEAR / atomic LAST as `u128` in Rust (wide `U256` intermediates for products), decimal strings in JSON, `bigint` in TypeScript. No floats, no JS `Number` for amounts.
-- Contract state is the only source of truth for winner, pots and balances. The UI never decides a winner and never shows simulated data on a public testnet dashboard (mocks must be labelled SIMULATED and stay local).
-- Every fee unit is conserved; integer-division remainders go to the treasury bucket.
-- No admin method may change leader, deadline, fees, supply or reserves.
-- Do not report tests as passing, or a deployment as live, unless the command actually ran and succeeded in this session. Checkpoint reports include `git status`, commit hash, command and result.
+- **Real money is involved.** Every deploy, contract call, signature, bot start or site publish needs explicit human approval in the moment. Never move or spend team funds on your own.
+- **Never** print, paste or commit private keys, seed phrases, `.env` files or `~/.near-credentials`.
+- Money is integers: yoctoNEAR as `u128` in Rust, decimal strings in JSON, `bigint` in TypeScript. No floats, no JS `Number` for amounts.
+- Contract state is the only source of truth for the crown holder, the jackpot and payouts. The website only displays contract views.
+- Do not report tests as passing, or a deployment as live, unless the command actually ran and succeeded in this session.
+- `main` only receives changes through reviewed pull requests.
 
-## Commands (contracts)
+## Commands
 
-```bash
-cargo test --manifest-path contracts/last/Cargo.toml
-cd contracts/last && cargo near build non-reproducible-wasm
-```
-
-The pure AMM functions are `market::calc_buy` / `calc_sell`: a free function must not share a name with a `#[near]` method (`quote_buy`, …), or the WASM build fails with E0428 while `cargo test` still passes.
-
-On Windows, near-sdk's `unit-testing` feature needs NASM + CMake; run tests from WSL instead, with the target dir outside OneDrive:
+Contract (Linux/WSL; on Windows `near-sdk`'s `unit-testing` feature needs NASM + CMake, so run from WSL with the target dir outside OneDrive):
 
 ```bash
-wsl -d Ubuntu-24.04 -- bash -lc 'source ~/.cargo/env; cd "$(wslpath "<repo path>")" && CARGO_TARGET_DIR=~/last-target cargo test --manifest-path contracts/last/Cargo.toml'
+cargo test --manifest-path contracts/last-pot/Cargo.toml
+cd contracts/last-pot && cargo near build non-reproducible-wasm --no-abi
 ```
 
-Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`.
+Plain `cargo check` fails by design in near-sdk 5.x; use `cargo check --target wasm32-unknown-unknown`. `#[private]` is enforced only in the WASM entry point, not in unit tests.
 
-Sandbox tests (`near-workspaces`, Linux/WSL only) take the built WASM:
+Website:
 
 ```bash
-LAST_WASM=~/last-target/near/last.wasm CARGO_TARGET_DIR=~/last-it-target cargo test --manifest-path tests/integration/Cargo.toml -- --nocapture
+pnpm --dir apps/web test
+pnpm --dir apps/web build
 ```
 
-`#[private]` is enforced only in the WASM entry point: test "callback only from self" in the sandbox, not in unit tests.
+Reporter (WSL; the reporter key lives in the near-cli legacy keychain):
 
-## Out of scope for V2
+```bash
+python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytrade.near --reporter heavycat9990.near --dry-run
+```
 
-Token burns, staking, dividends, referrals, buybacks, AI agents, NFTs, bridges, external DEX integration.
+Public RPCs rate-limit (429): the bot rotates endpoints in `RPCS`; check them with a `get_state` call before changing the list.
