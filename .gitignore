@@ -28,3 +28,7 @@ desktop.ini
 !.vscode/extensions.json
 .idea/
 
+
+# Python
+__pycache__/
+*.pyc
