@@ -11,7 +11,7 @@ Read `README.md` (public promise) and `docs/SPEC_V2.md` (engineering contract) b
 
 ## Hard rules
 
-- **NEAR Testnet only.** Never touch mainnet, never automate real payments.
+- **Networks:** the V1 game (`contracts/last`) is NEAR Testnet only. Mainnet is used only for the Nearly launch architecture (`contracts/last-pot`, `scripts/reporter.py`, see `docs/MAINNET_POT.md`), decided by the team on 2026-11-13. Every mainnet deploy, signature or bot start needs explicit human approval in the moment. Never move or spend team funds on your own.
 - **Never** print, paste or commit private keys, seed phrases, `.env` secrets or `~/.near-credentials`.
 - Money is integers: yoctoNEAR / atomic LAST as `u128` in Rust (wide `U256` intermediates for products), decimal strings in JSON, `bigint` in TypeScript. No floats, no JS `Number` for amounts.
 - Contract state is the only source of truth for winner, pots and balances. The UI never decides a winner and never shows simulated data on a public testnet dashboard (mocks must be labelled SIMULATED and stay local).
