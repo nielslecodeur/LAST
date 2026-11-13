@@ -1,18 +1,22 @@
 # LAST — Contract API
 
-**Status:** DRAFT v0.3. Interface agreed between Developer A (contract) and Developer B (web) before implementation. **Nothing here is deployed yet.** Changes go through both developers and bump the version below.
+**Status:** v0.4. Changes go through both developers and bump the version below.
 
-Every method below is implemented on `feat/contracts` (Gates 1–2), covered by unit tests and a `near-workspaces` sandbox scenario. Not deployed to testnet yet.
+- **v0.3** is deployed as `last-armand.testnet` (2026-11-12, Gate 4 evidence).
+- **v0.4** adds the play balance (§2.1). It is deployed as `last-instant.testnet` (2026-11-13), the demo contract for instant trading. See `docs/DEPLOYMENT.md`.
+
+v0.4 methods are covered by unit tests (77 pass). The `near-workspaces` sandbox suite has not been re-run for v0.4.
 
 | Version | Date | Change |
 |---|---|---|
 | 0.1 | 2026-11-12 | First draft from `docs/SPEC_V2.md` |
 | 0.2 | 2026-11-12 | Gate 1: added `buy_count`/`sell_count` to market state, `get_roles`, `get_integrity`; new error codes `ERR_ZERO_AMOUNT`, `ERR_USE_SELL`, `ERR_POSITIVE_BALANCE`, `ERR_FORBIDDEN`, `ERR_INSOLVENT`, `ERR_OVERFLOW` |
 | 0.3 | 2026-11-12 | Gate 2: settle/claim/withdraw implemented; `get_integrity` gains `in_flight` |
+| 0.4 | 2026-11-13 | Play balance: `deposit_balance`, `buy_from_balance`, `sell_to_balance`; event `balance_deposit`; error `ERR_INSUFFICIENT_BALANCE_NEAR`. No state-layout change; `buy`/`sell` unchanged |
 
 ## 0. Conventions
 
-- **Network:** NEAR Testnet only. Contract account: **`last-armand.testnet`** (deployed 2026-11-12, see `docs/DEPLOYMENT.md`).
+- **Network:** NEAR Testnet only. Contract accounts: **`last-instant.testnet`** (v0.4, demo) and **`last-armand.testnet`** (v0.3, Gate 4 run). See `docs/DEPLOYMENT.md`.
 - **Amounts** (`U128`) are JSON **decimal strings**: yoctoNEAR (`1 NEAR = 10^24`) or atomic LAST (`1 LAST = 10^18`). Frontend parses with `BigInt`, never `Number`.
 - **Timestamps** (`U64`) are JSON decimal strings in **nanoseconds** (`env::block_timestamp()`).
 - **Round ids** (`U64`) start at `1`. `round_id` in game state is the current round when ACTIVE/EXPIRED, or the id the next round will take when IDLE.
@@ -80,6 +84,31 @@ Recommended gas: 30 Tgas for `buy`/`sell`/`settle_round`, 50 Tgas for `withdraw_
 - Returns a promise resolving to `{ "amount": "...", "success": true }`.
 - Only one withdrawal in flight per account. Credit from new sells while in flight is added to `available`.
 - Errors: `ERR_ONE_YOCTO`, `ERR_NO_CREDIT`, `ERR_WITHDRAW_IN_FLIGHT`.
+
+### 2.1 Play balance (v0.4) — trade without a wallet popup per trade
+
+The **play balance is the existing NEAR credit** (`credit_available` in `get_account_state`, counted in `credits_outstanding`). Three ways change it:
+- `deposit_balance` and sells increase it;
+- `buy_from_balance` spends it;
+- it leaves the contract only through `withdraw_near_credit` (1 yocto), to the account itself.
+
+`buy_from_balance` and `sell_to_balance` take **no deposit**. This is deliberate: a NEAR function-call access key cannot attach a deposit, so a key limited to this contract (the web app's session key) can call them. Such a key can trade the owner's balance and LAST, but can never send NEAR or LAST to another account. A leaked key can at worst spend the balance on fees and price impact.
+
+#### `deposit_balance()` — payable
+
+- Adds the attached NEAR to the caller's play balance. NEP-145 registration is required. In one transaction the web app sends `storage_deposit` first, then `deposit_balance`.
+- Returns `{ "amount": "...", "credit_available": "..." }`. Emits `balance_deposit`.
+- Errors: `ERR_ZERO_DEPOSIT`, `ERR_FORBIDDEN`, `ERR_NOT_REGISTERED`, `ERR_INSOLVENT`.
+
+#### `buy_from_balance(amount: U128, min_tokens_out: U128)` — no deposit
+
+- Debits `amount` from the caller's play balance, then runs exactly the `buy` logic with `gross = amount`: same fee, eligibility (`amount >= min_eligible_buy`), crown, timer and `BuyResult`. It emits the same `buy` event.
+- Errors: `ERR_ZERO_AMOUNT`, `ERR_INSUFFICIENT_BALANCE_NEAR`, plus every `buy` error. A panic reverts the debit.
+
+#### `sell_to_balance(tokens_in: U128, min_near_out: U128)` — no deposit
+
+- `sell` without the 1 yocto. The proceeds go to the caller's play balance and it returns `SellResult`. It never changes the leader or the deadline.
+- Errors: every `sell` error except `ERR_ONE_YOCTO`.
 
 ### `settle_round()` — anyone, no deposit
 
@@ -224,8 +253,11 @@ Logged as `EVENT_JSON:{"standard":"last","version":"1.0.0","event":"<name>","dat
 | `round_settled` | `round_id, winner, prize, ended_at_ns, settled_by` |
 | `prize_claim` | `round_id, winner, amount, status` (`IN_FLIGHT` / `PAID` / `FAILED`) |
 | `credit_withdraw` | `account_id, amount, status` (`IN_FLIGHT` / `PAID` / `FAILED`) |
+| `balance_deposit` (v0.4) | `account_id, amount` |
 
 Events feed the activity list only. Winner, pots and balances always come from the views.
+
+Events carry no post-trade reserves or sequence number. A price history can still be rebuilt exactly: replay `buy` (x += gross − fee, y −= tokens_out) and `sell` (x −= gross_near_out, y += tokens_in) from the seed, then check the result against `get_market_state`. Keep only successful receipts executed by the contract account itself, and deduplicate by (receipt id, log index). Any contract can log a look-alike `"standard":"last"` event.
 
 ## 6. Error codes
 
@@ -250,6 +282,7 @@ Events feed the activity list only. Winner, pots and balances always come from t
 | `ERR_NO_CREDIT` / `ERR_WITHDRAW_IN_FLIGHT` | nothing to withdraw / already pending | — |
 | `ERR_NO_ACTIVE_ROUND` / `ERR_NOT_EXPIRED` | settle not possible | — |
 | `ERR_UNKNOWN_ROUND` / `ERR_NOT_WINNER` / `ERR_ALREADY_PAID` / `ERR_CLAIM_IN_FLIGHT` / `ERR_EMPTY_PRIZE` | claim not possible | — |
+| `ERR_INSUFFICIENT_BALANCE_NEAR` (v0.4) | `buy_from_balance` above the play balance | Top up your play balance |
 
 ## 7. Not in the API (by design)
 

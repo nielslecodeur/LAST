@@ -1,7 +1,7 @@
 # LAST — Last Buyer Wins
 
 > **NEAR Hackathon 2026 | Memecoins With Mechanics + Games With Real Economies**  
-> **Status: V1 deployed on NEAR Testnet as [`last-armand.testnet`](docs/DEPLOYMENT.md); buy → settle → claim verified on-chain with explorer links ([`docs/GATE4_REPORT.md`](docs/GATE4_REPORT.md)). Web app in [`apps/web`](apps/web/README.md). Not audited, not immutable (see Disclosures).**  
+> **Status: V1 deployed on NEAR Testnet as [`last-armand.testnet`](docs/DEPLOYMENT.md); buy → settle → claim verified on-chain with explorer links ([`docs/GATE4_REPORT.md`](docs/GATE4_REPORT.md)). Instant trading (v0.4: one signature, then no wallet popup) deployed as [`last-instant.testnet`](docs/DEPLOYMENT.md). Web app in [`apps/web`](apps/web/README.md). Not audited, not immutable (see Disclosures).**  
 > **Network: NEAR Testnet exclusively. Never use real-value tokens for this prototype.**
 
 ## One-sentence pitch
@@ -24,6 +24,23 @@ This is **not a novel invention of last-buyer-wins mechanics**: FOMO3D (2018), F
   - 12/12 financial invariants hold after the run.
 
   Still to record: a crown change between two distinct wallets.
+- **Instant trading (contract v0.4, `last-instant.testnet`, deployed 2026-11-13).** One wallet approval does three things:
+  - adds a NEAR **function-call session key**, limited to `settle_round`, `claim_reward`, `buy_from_balance` and `sell_to_balance` on the contract, with a 0.25 NEAR gas budget;
+  - registers storage;
+  - fills a **play balance**.
+
+  After that, buys and sells come from the play balance with **no wallet popup**. The page settles expired rounds and claims your prizes by itself. A buy on an expired round settles it in the same transaction.
+  - **The session key cannot attach a deposit,** so it can never send NEAR or LAST to another account. Withdrawing the balance always needs the wallet.
+  - **Where the key lives:** it is a non-extractable WebCrypto key in that browser's IndexedDB. If it leaks, the play balance can be spent on fees and price impact, so keep the balance small.
+  - **Confirmation:** instant buys above 5× the minimum, or with ≥ 5% price impact, ask for a second tap.
+  - **Recorded on-chain so far:** the one-approval enable and a popup-free `buy_from_balance` (`docs/DEPLOYMENT.md`).
+  - **Not yet recorded on v0.4:** auto settle/claim, `sell_to_balance`, withdrawal and key removal.
+  - **Tests:** contract unit tests pass (77). The sandbox suite has not been re-run for v0.4.
+  - **Economics:** fees, split and the locked 20% are unchanged from V1.
+- **Price chart: on the roadmap, after the hackathon.** A team review of the proposal kept it out of this submission. Liquidity is 3 NEAR, so the curve would mostly trace crown-buyers, and there is no indexer. When built, it must meet three requirements:
+  1. **What it plots:** the spot price (reserve ratio) after each trade, never the execution price.
+  2. **How it is built:** replayed from on-chain `buy`/`sell` events of the contract account only, successful receipts only, deduplicated. It is shown only if the replay reproduces `get_market_state` exactly.
+  3. **What it is shown with:** source, freshness and unique wallets next to the volume, and one series per contract.
 - **V2 "Crown Economy" (85% jackpot / 10% carry-over / 5% platform) is analysed and on the roadmap, not implemented.** A team review kept V1 for the hackathon:
   - the larger jackpot share is invisible at testnet volumes;
   - a new code hash would invalidate the verified evidence.

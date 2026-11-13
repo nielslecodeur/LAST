@@ -2,7 +2,40 @@
 
 **Network:** NEAR Testnet only. No mainnet deployment exists or is planned for the hackathon.
 
-## Current deployment
+## v0.4 — instant trading demo: `last-instant.testnet`
+
+| Item | Value |
+|---|---|
+| Contract account | `last-instant.testnet` (created 2026-11-13 via the testnet faucet, [`2C2snLwy…`](https://testnet.nearblocks.io/txns/2C2snLwyt4KdUMNHJ2k4abGd4WWZy7hSBEpmQjysa8Vu)) |
+| Deployed + initialized | 2026-11-13 10:46 UTC, one transaction (`deploy` + `new`): [`JE4b6kqV…`](https://testnet.nearblocks.io/txns/JE4b6kqVbb9ueawvyq8zw8AQCEPA5WKt9ASkmsN1vpCc) |
+| Source | branch `feat/auto-trading`, commit `6f53a01` (`contracts/last` unchanged since) |
+| Build | `cargo near build non-reproducible-wasm` (cargo-near 0.22.0, WSL Ubuntu) |
+| WASM sha256 | `cd8566a7d367cc188c51737b6e66c1bbec3834936e21ef6e5b9a140c99f7e388` |
+| On-chain `code_hash` | `EqGZPzobipi3LsMfEBQknUQdsnxTrcmQfdQgmDTn8ouZ` (base58 of the sha256 above: checked) |
+| WASM size | 245,313 bytes (~2.46 NEAR storage staking) |
+| API | `docs/CONTRACT_API.md` v0.4 (v0.3 + play balance) |
+
+Init config: same as below, with `owner_id` / `treasury_id` / `platform_id` = `last-instant.testnet`. That means 120 s rounds, a 0.03 NEAR minimum and a 3 NEAR seed.
+
+State right after init, from `LAST_CONTRACT=last-instant.testnet node scripts/gate4.mjs snapshot`: `IDLE` round 1, reserve 3 NEAR / 1,000,000 LAST, balance 9.997988 NEAR, storage 2.45947 NEAR, obligations 3 NEAR, surplus 4.538518 NEAR. All 12 invariants PASS.
+
+Its full-access key is held by the deployer (WSL legacy keychain, Builder B's machine). **Not immutable**, same disclosure as below.
+
+### First instant-trading transactions (signer `nifelst.testnet`, web app)
+
+| Step | Transaction | Result |
+|---|---|---|
+| `storage_deposit` + `deposit_balance` 0.5 NEAR, sent in the same wallet request as the session-key AddKey (a separate transaction on `nifelst.testnet`) | [`BJdpWGg6…`](https://testnet.nearblocks.io/txns/BJdpWGg6UY3bj92buhqrWz7WSqVuoJFd5aJp5nB72DDs) | registered, play balance 0.5 NEAR |
+| `buy_from_balance` 0.1 NEAR, **signed by the session key, no wallet popup** | [`qZKvPck8…`](https://testnet.nearblocks.io/txns/qZKvPck83HFWB5fwbG8rvL7oxvLFEmPfJD18tGJj3cf) | eligible, round #1 starts |
+| `deposit_balance` 0.5 NEAR (enable clicked a second time, which also added a second, unused session key) | [`6hh6B1CK…`](https://testnet.nearblocks.io/txns/6hh6B1CKwLMoT1thtiVcTGveeihgoeQknzZdax7q8Fno) | play balance 0.9 NEAR |
+
+Not yet recorded on v0.4:
+- automatic settle and claim;
+- `sell_to_balance`;
+- `withdraw_near_credit` of a play balance;
+- removing the session key.
+
+## v0.3 — Gate 4 evidence: `last-armand.testnet`
 
 | Item | Value |
 |---|---|
