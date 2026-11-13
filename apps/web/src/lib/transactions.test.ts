@@ -7,7 +7,17 @@ import { RpcError, toBase64 } from "./rpc";
 import { type FunctionCallAction, buildBuyTx, buildClaimTx, buildSellTx, buildSettleTx, buildWithdrawTx, interpretOutcome } from "./transactions";
 import { IDLE_TX, txReducer } from "./txMachine";
 import { type AccountState, type Capabilities, NO_GATE2 } from "./types";
-import { GAS_RESERVE_YOCTO, checkBuy, checkSell } from "./validation";
+import { GAS_RESERVE_YOCTO, checkBuy, checkSell, needsSecondTap } from "./validation";
+
+describe("instant buy guardrail", () => {
+  const MIN = 3n * 10n ** 22n;
+  it("second tap above 5x the minimum or at >= 5% impact, never for a small buy", () => {
+    expect(needsSecondTap(MIN, MIN, 190n)).toBe(false);
+    expect(needsSecondTap(5n * MIN, MIN, 400n)).toBe(false);
+    expect(needsSecondTap(5n * MIN + 1n, MIN, 100n)).toBe(true);
+    expect(needsSecondTap(MIN, MIN, 500n)).toBe(true);
+  });
+});
 
 const NEAR = 10n ** 24n;
 const GATE2: Capabilities = { settleRound: true, claimReward: true, withdrawNearCredit: true, getRound: true, playBalance: true, source: "wasm-exports" };

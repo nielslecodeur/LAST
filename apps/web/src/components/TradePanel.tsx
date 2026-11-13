@@ -12,6 +12,7 @@ import {
   tryParseUnits,
 } from "../lib/amounts";
 import { HIGH_IMPACT_BPS, buyPriceImpactBps, maxGasCost, sellPriceImpactBps } from "../lib/pricing";
+import { needsSecondTap } from "../lib/validation";
 import { DEFAULT_SLIPPAGE_BPS, SLIPPAGE_PRESETS_BPS, applySlippage, parseSlippagePercent } from "../lib/slippage";
 import { GAS, buildBuyFromBalanceTx, buildBuyTx, buildSellToBalanceTx, buildSellTx } from "../lib/transactions";
 import { shortAccount } from "../lib/game";
@@ -163,11 +164,22 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
     return min ? [min, min * 5n, min * 20n] : [];
   }, [market?.minEligibleBuy]);
   const gas = (check.storageDeposit !== null ? GAS.storageDeposit + GAS.buy : GAS.buy) + (settleFirst ? GAS.settle : 0n);
+  // No wallet popup on instant buys: big or high-impact ones need a second tap (council: guardrail).
+  const [armed, setArmed] = useState(false);
+  useEffect(() => setArmed(false), [input, instant]);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 6_000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const secondTap = instant && gross !== null && needsSecondTap(gross, market?.minEligibleBuy ?? null, impact);
 
   const submit = async () => {
     if (!reader || !quote || minOut === null || gross === null || blocker || !accountId) return;
     const what = `${settleFirst ? `Settle round #${game!.roundId} + ` : ""}${quote.eligible ? "Crown buy" : "Token buy"}: ${formatCompact(quote.tokensOut, LAST_DECIMALS)} LAST for ${formatNear(gross)} NEAR`;
     if (instant) {
+      if (secondTap && !armed) return setArmed(true);
+      setArmed(false);
       const ok = await run(buildBuyFromBalanceTx({ contractId: reader.contractId, amount: gross, minTokensOut: minOut, settleFirst, label: `⚡ ${what}` }));
       if (ok) setInput("");
       return;
@@ -252,7 +264,9 @@ function BuyForm({ slippageBps, prefill }: { slippageBps: bigint; prefill: { val
             ? instant
               ? "Buying…"
               : "Confirm in wallet…"
-            : instant && !blocker
+            : instant && !blocker && armed
+              ? `Tap again to confirm — ${formatNear(gross ?? 0n)} NEAR${impact !== null ? `, ${formatBps(impact)} impact` : ""}`
+              : instant && !blocker
               ? `⚡ ${settleFirst ? "Settle & buy instantly" : quote?.eligible ? "Buy & steal the crown — instant" : "Buy instantly"}`
             : (blocker ?? `${settleFirst ? "Settle & " : ""}${quote?.eligible ? (settleFirst ? "buy — open the next round" : "Buy LAST & steal the crown") : settleFirst ? "buy LAST" : "Buy LAST"}`)}
         </Button>

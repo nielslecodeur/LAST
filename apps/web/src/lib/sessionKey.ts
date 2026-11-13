@@ -30,8 +30,10 @@ export interface SessionManager {
   prepareEnable(accountId: string): Promise<TxRequest | null>;
   /** Drops a key whose registration was not signed. */
   discard(accountId: string): Promise<void>;
-  /** Forgets the key locally and returns the wallet transaction that deletes it on-chain (null = none). */
-  prepareDisable(accountId: string): Promise<TxRequest | null>;
+  /** Forgets the key locally and returns the wallet transaction that deletes it (+ `extra` keys) on-chain. */
+  prepareDisable(accountId: string, extra?: string[]): Promise<TxRequest | null>;
+  /** Function-call keys of the account for this contract other than the one stored here. */
+  strayKeys(accountId: string): Promise<string[]>;
   /** Signs with the session key and broadcasts. */
   send(accountId: string, tx: TxRequest): Promise<ExecutionOutcomeLike>;
 }
@@ -176,11 +178,34 @@ export class LiveSessionManager implements SessionManager {
     await this.store.delete(this.id(accountId));
   }
 
-  async prepareDisable(accountId: string): Promise<TxRequest | null> {
+  async prepareDisable(accountId: string, extra: string[] = []): Promise<TxRequest | null> {
     const kp = await this.store.get(this.id(accountId));
     await this.store.delete(this.id(accountId));
-    if (!kp) return null;
-    return buildDeleteSessionKeyTx(accountId, (await this.publicKey(kp)).text);
+    const keys = [...(kp ? [(await this.publicKey(kp)).text] : []), ...extra];
+    return keys.length === 0 ? null : buildDeleteSessionKeyTx(accountId, keys, "Turn off instant trading");
+  }
+
+  async strayKeys(accountId: string): Promise<string[]> {
+    const kp = await this.store.get(this.id(accountId));
+    const mine = kp ? (await this.publicKey(kp)).text : null;
+    const res = await this.rpc.query<{ keys?: Array<{ public_key: string; access_key: { permission: AccessKeyView["permission"] } }> }>({
+      request_type: "view_access_key_list",
+      finality: "final",
+      account_id: accountId,
+    });
+    // Only keys limited to THIS contract and to session methods: never a full-access key.
+    return (res.keys ?? [])
+      .filter((k) => {
+        const p = k.access_key.permission;
+        return (
+          p !== "FullAccess" &&
+          p.FunctionCall.receiver_id === this.contractId &&
+          p.FunctionCall.method_names.length > 0 &&
+          p.FunctionCall.method_names.every((m) => (SESSION_METHODS as readonly string[]).includes(m)) &&
+          k.public_key !== mine
+        );
+      })
+      .map((k) => k.public_key);
   }
 
   async send(accountId: string, tx: TxRequest): Promise<ExecutionOutcomeLike> {
@@ -236,6 +261,9 @@ export class SimulatedSessionManager implements SessionManager {
   async prepareDisable(accountId: string): Promise<null> {
     this.on.delete(accountId);
     return null;
+  }
+  async strayKeys(): Promise<string[]> {
+    return [];
   }
   async send(accountId: string, tx: TxRequest) {
     if (!this.on.has(accountId)) throw new Error("Auto mode is off.");

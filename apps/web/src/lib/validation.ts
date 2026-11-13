@@ -9,6 +9,14 @@ import type { AccountState, BuyQuote, GameStatus, SellQuote, StorageBounds } fro
 /** NEAR kept aside for gas when checking that a buy is affordable (≈ 60 Tgas at testnet prices, rounded up). */
 export const GAS_RESERVE_YOCTO = 10n ** 22n; // 0.01 NEAR
 
+/** Instant (no-popup) buys above 5× the minimum or with ≥ 5% price impact need a second tap. */
+export const SECOND_TAP_MIN_MULTIPLE = 5n;
+export const SECOND_TAP_IMPACT_BPS = 500n;
+export function needsSecondTap(gross: bigint, minEligibleBuy: bigint | null, impactBps: bigint | null): boolean {
+  if (minEligibleBuy !== null && gross > minEligibleBuy * SECOND_TAP_MIN_MULTIPLE) return true;
+  return impactBps !== null && impactBps >= SECOND_TAP_IMPACT_BPS;
+}
+
 export type Blocker =
   | "NOT_DEPLOYED"
   | "NO_WALLET"

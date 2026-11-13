@@ -232,13 +232,15 @@ export function buildAddSessionKeyTx(accountId: string, contractId: string, publ
   };
 }
 
-/** Removes the session key from the user's account (wallet signature). */
-export function buildDeleteSessionKeyTx(accountId: string, publicKey: string): TxRequest {
+/** Removes session key(s) from the user's account (one wallet signature). */
+export function buildDeleteSessionKeyTx(accountId: string, publicKeys: string | string[], label?: string): TxRequest {
+  const keys = Array.isArray(publicKeys) ? publicKeys : [publicKeys];
+  if (keys.length === 0) throw new RangeError("no key to delete");
   return {
     kind: "session",
     receiverId: accountId,
-    actions: [{ type: "DeleteKey", params: { publicKey } }],
-    label: "Turn off instant trading",
+    actions: keys.map((publicKey) => ({ type: "DeleteKey" as const, params: { publicKey } })),
+    label: label ?? (Array.isArray(publicKeys) ? `Remove ${keys.length} unused session key${keys.length > 1 ? "s" : ""}` : "Turn off instant trading"),
   };
 }
 

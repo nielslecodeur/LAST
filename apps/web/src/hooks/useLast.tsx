@@ -25,6 +25,7 @@ import { type SessionManager, type SessionStatus, isSessionKeyGone } from "../li
 import {
   type TxRequest,
   buildClaimTx,
+  buildDeleteSessionKeyTx,
   buildDepositTx,
   buildSettleAndClaimTx,
   buildSettleTx,
@@ -114,6 +115,9 @@ export interface LastContextValue extends LastData {
   disableAuto(): Promise<void>;
   /** Local time at which auto mode will settle an expired round won by someone else (null = none). */
   autoSettleAtMs: number | null;
+  /** Unused session keys of this account for this contract. */
+  strayKeys: string[];
+  removeStrayKeys(): Promise<void>;
 }
 
 const Ctx = createContext<LastContextValue | null>(null);
@@ -138,6 +142,8 @@ const EMPTY: LastData = {
 };
 
 const POLL_MS = 3_000;
+/** Hidden tab with auto mode on: keep reading (slower) so expired rounds still get settled/claimed. */
+const HIDDEN_AUTO_POLL_MS = 10_000;
 /** Market/account views every N light polls (or as soon as the game moves). */
 const MAIN_EVERY = 2;
 /** Heavier, slow-moving views (integrity, gas price) every N polls. */
@@ -177,6 +183,9 @@ export function LastProvider(props: {
   const [interrupted, setInterrupted] = useState<PendingTxMarker | null>(() => takeInterrupted());
   const [autoMode, setAutoMode] = useState<AutoMode>({ state: "none" });
   const [autoTick, setAutoTick] = useState(0);
+  /** Other session keys of this account for this contract (e.g. enabled twice): removable in one signature. */
+  const [strayKeys, setStrayKeys] = useState<string[]>([]);
+  const autoOnRef = useRef(false);
   const txSeq = useRef(0);
   const accountRef = useRef<string | null>(null);
   accountRef.current = accountId;
@@ -336,10 +345,11 @@ export function LastProvider(props: {
     // so a rate-limited endpoint is not hammered; back to normal after one success.
     const loop = async () => {
       if (stopped) return;
-      if (typeof document === "undefined" || document.visibilityState !== "hidden") await refresh({ light: true });
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (!hidden || autoOnRef.current) await refresh({ light: true });
       if (stopped) return;
       const backoff = Math.min(MAX_BACKOFF_MS, pollMs * 2 ** Math.min(failures.current, 4));
-      timer = setTimeout(loop, failures.current > 0 ? backoff : pollMs);
+      timer = setTimeout(loop, failures.current > 0 ? backoff : hidden ? Math.max(pollMs, HIDDEN_AUTO_POLL_MS) : pollMs);
     };
     void refresh().then(() => {
       if (!stopped) timer = setTimeout(loop, pollMs);
@@ -496,6 +506,10 @@ export function LastProvider(props: {
           const st = await session.status(who);
           if (accountRef.current !== who) return;
           setAutoMode(st);
+          void session
+            .strayKeys(who)
+            .then((k) => accountRef.current === who && setStrayKeys(k))
+            .catch(() => undefined);
           if (st.state !== "off" || i === attempts - 1) return;
         } catch {
           // RPC hiccup: keep the current state, never discard a key on a network error
@@ -551,10 +565,16 @@ export function LastProvider(props: {
   const disableAuto = useCallback(async () => {
     const who = accountRef.current;
     if (!session || !who || isBusy(txRef.current)) return;
-    const req = await session.prepareDisable(who); // forgotten locally even if the wallet step is rejected
+    const req = await session.prepareDisable(who, strayKeys); // forgotten locally even if the wallet step is rejected
     setAutoMode({ state: "off" });
-    if (req) await run(req);
-  }, [session, run]);
+    if (req && (await run(req))) setStrayKeys([]);
+  }, [session, run, strayKeys]);
+
+  const removeStrayKeys = useCallback(async () => {
+    const who = accountRef.current;
+    if (!session || !who || strayKeys.length === 0 || isBusy(txRef.current)) return;
+    if (await run(buildDeleteSessionKeyTx(who, strayKeys))) setStrayKeys([]);
+  }, [session, run, strayKeys]);
 
   // Runner: one auto action at a time, each tried once per page session.
   const autoTried = useRef(new Set<string>());
@@ -568,6 +588,7 @@ export function LastProvider(props: {
   }
   const graceMs = props.autoSettleGraceMs ?? AUTO_SETTLE_GRACE_MS + jitter.current;
   const autoOn = autoMode.state === "on" && !walletError && deployed;
+  autoOnRef.current = autoOn;
   const autoSettleAtMs =
     autoOn && game?.status === "EXPIRED" && game.leader !== accountId && expiredSeen.current ? expiredSeen.current.atMs + graceMs : null;
 
@@ -630,8 +651,10 @@ export function LastProvider(props: {
       enableAuto,
       disableAuto,
       autoSettleAtMs,
+      strayKeys,
+      removeStrayKeys,
     }),
-    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, walletError, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, interrupted, dismissInterrupted, refresh, autoMode, enableAuto, disableAuto, autoSettleAtMs],
+    [data, config, reader, deployment, deployed, capabilities, rpcError, lastUpdatedMs, accountId, walletError, connecting, connect, disconnect, tx, run, resetTx, sessionTxs, interrupted, dismissInterrupted, refresh, autoMode, enableAuto, disableAuto, autoSettleAtMs, strayKeys, removeStrayKeys],
   );
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

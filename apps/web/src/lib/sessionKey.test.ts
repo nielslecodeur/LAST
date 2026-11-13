@@ -34,6 +34,31 @@ function fakeRpc(opts: { keyExists: () => boolean; nonce?: number }) {
   return { rpc, sent };
 }
 
+describe("stray session keys", () => {
+  it("lists only OTHER function-call keys limited to this contract and to session methods", async () => {
+    const { rpc } = fakeRpc({ keyExists: () => true });
+    const listRpc: RpcClient = {
+      ...rpc,
+      async query<T>(params: Record<string, unknown>): Promise<T> {
+        if (params.request_type !== "view_access_key_list") return rpc.query<T>(params);
+        const fc = (receiver_id: string, method_names: string[]) => ({ FunctionCall: { allowance: "1", receiver_id, method_names } });
+        return {
+          keys: [
+            { public_key: "ed25519:full", access_key: { permission: "FullAccess" } },
+            { public_key: "ed25519:old", access_key: { permission: fc(C, ["settle_round", "claim_reward"]) } },
+            { public_key: "ed25519:other-app", access_key: { permission: fc("agents.testnet", ["agent_pay"]) } },
+            { public_key: "ed25519:wider", access_key: { permission: fc(C, ["settle_round", "ft_transfer"]) } },
+          ],
+        } as T;
+      },
+    };
+    const m = new LiveSessionManager(listRpc, listRpc, C, memoryKeyStore());
+    expect(await m.strayKeys(ME)).toEqual(["ed25519:old"]);
+    const off = (await m.prepareDisable(ME, ["ed25519:old"]))!;
+    expect(off.actions).toEqual([{ type: "DeleteKey", params: { publicKey: "ed25519:old" } }]);
+  });
+});
+
 describe("session key permissions", () => {
   it("the AddKey is limited to settle, claim and balance trades on the contract, with a 0.25 NEAR gas budget", async () => {
     const { rpc } = fakeRpc({ keyExists: () => false });

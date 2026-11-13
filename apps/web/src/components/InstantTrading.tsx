@@ -13,7 +13,7 @@ const PRESETS = ["0.2", "0.5", "1"];
  * wallet popup. Only topping up and withdrawing go through the wallet.
  */
 export function InstantTradingCard() {
-  const { autoMode, enableAuto, disableAuto, accountId, walletError, tx, run, capabilities, deployed, reader, simulated, account, storage } = useLast();
+  const { autoMode, enableAuto, disableAuto, accountId, walletError, tx, run, capabilities, deployed, reader, simulated, account, storage, strayKeys, removeStrayKeys } = useLast();
   const [amount, setAmount] = useState("0.5");
   if (!deployed || !accountId || walletError || !capabilities.settleRound || autoMode.state === "none") return null;
 
@@ -109,9 +109,10 @@ export function InstantTradingCard() {
       </div>
       {trading && (
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-sm text-mute">
+          <span className="flex flex-wrap items-baseline gap-2 text-sm text-mute">
             Play balance{" "}
             <span className="font-mono text-lg font-extrabold text-text">{balance === null ? "…" : `${formatNear(balance, 4)} NEAR`}</span>
+            <Badge tone="sky">{simulated ? "SIMULATED" : "TESTNET · no value"}</Badge>
           </span>
           <span className="flex items-center gap-2">
             <Button variant="secondary" className="px-3 py-1.5 text-xs" disabled={busy || !deposit} onClick={topUp}>
@@ -123,7 +124,13 @@ export function InstantTradingCard() {
       <p className="mt-1 text-[11px] text-mute">
         {trading ? "Buys and sells use your play balance with no popup. " : "Buys still ask your wallet on this contract version. "}
         {autoMode.allowance !== null && <>Gas budget left: <span className="font-mono">{formatNear(autoMode.allowance, 4)} NEAR</span>.</>}
+        {trading && " Buys above 5× the minimum or with ≥ 5% price impact ask for a second tap."}
       </p>
+      {strayKeys.length > 0 && (
+        <button className="mt-1 text-[11px] text-gold underline disabled:opacity-50" disabled={busy} onClick={() => void removeStrayKeys()}>
+          {strayKeys.length} unused session key{strayKeys.length > 1 ? "s" : ""} on your account (from an earlier enable) — remove (1 signature)
+        </button>
+      )}
     </div>
   );
 }

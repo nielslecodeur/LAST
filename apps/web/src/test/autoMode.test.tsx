@@ -95,6 +95,17 @@ describe("instant trading (play balance)", () => {
     expect(within(hero()).getByText(/That's you/)).toBeTruthy();
     expect(sim.credits.get(SIM_USER)?.available).toBe(45n * 10n ** 22n); // 0.5 - 0.05
     expect(wallet).toEqual([["deposit_balance"]]); // still only the one signature
+
+    // A big instant buy (> 5x the minimum) needs a second tap.
+    const before = sim.credits.get(SIM_USER)!.available;
+    fireEvent.change(screen.getByLabelText(/You pay/), { target: { value: "0.2" } });
+    await waitFor(() => expect(button(/— instant/).disabled).toBe(false));
+    fireEvent.click(button(/— instant/));
+    await waitFor(() => expect(button(/Tap again to confirm/)).toBeTruthy());
+    expect(sim.credits.get(SIM_USER)!.available).toBe(before); // nothing spent yet
+    fireEvent.click(button(/Tap again to confirm/));
+    await waitFor(() => expect(sim.credits.get(SIM_USER)!.available).toBe(before - 2n * 10n ** 23n));
+    expect(screen.getAllByText(/TESTNET · no value|SIMULATED/).length).toBeGreaterThan(0);
   });
 });
 
