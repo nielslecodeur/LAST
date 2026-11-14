@@ -32,3 +32,6 @@ desktop.ini
 # Python
 __pycache__/
 *.pyc
+
+# Demo recordings (not committed)
+demo/

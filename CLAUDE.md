@@ -35,4 +35,6 @@ Reporter (WSL; the reporter key lives in the near-cli legacy keychain):
 python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytrade.near --reporter heavycat9990.near --dry-run
 ```
 
+The live bot runs on GitHub Actions in `armand418/last-reporter` (same script, restricted function-call key in repo secrets). Never run a second signing instance next to it: disable that workflow first.
+
 Public RPCs rate-limit (429): the bot rotates endpoints in `RPCS`; check them with a `get_state` call before changing the list.
