@@ -136,6 +136,11 @@ python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytra
 - **armand418** — jackpot contract, reporter bot, mainnet deployment, website.
 - **nielslecodeur** — frontend and on-chain integration work.
 
+**Other hackathon project (rule Q-015):** nielslecodeur also built **SOL2NEAR** (https://github.com/nielslecodeur/SOL2NEAR),
+a separate solo project in the `memecoins` and `defi` tracks: Solana capital routed into verifiable NEAR liquidity, with
+the FUEL Reactor, on test networks. The two projects are independent: separate repositories, contracts and accounts,
+and a different mechanic.
+
 **AI-assisted development:** code, tests and docs were written with Claude Code (Anthropic) under human review; commits made with it carry a `Co-Authored-By: Claude` trailer. Product, economic and deployment decisions were made by the team.
 
 **Libraries:** [`near-sdk`](https://github.com/near/near-sdk-rs) (MIT or Apache-2.0), React, Vite, Tailwind CSS, Vitest (MIT), [near-cli-rs](https://github.com/near/near-cli-rs) and [cargo-near](https://github.com/near/cargo-near) (MIT or Apache-2.0). Fonts: IBM Plex Mono, Anton (SIL OFL). Infrastructure: [Nearly](https://nearly.trade) launchpad, Rhea Finance DCL pool, FastNEAR APIs. Palette inspired by the NEAR Hackathon site.
