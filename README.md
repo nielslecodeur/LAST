@@ -15,7 +15,7 @@ Every buy of at least **0.5 NEAR** takes the crown and resets a **60-minute** co
 |---|---|
 | Network | **NEAR mainnet** |
 | Token | `$LAST` (name "Last"), NEP-141, contract `last-2.nearlytrade.near`, 18 decimals, fixed supply 1,000,000,000 |
-| Launchpad | [Nearly](https://nearly.trade/last-2.nearlytrade.near), launched 2026-11-13 by `heavycat9990.near` |
+| Launchpad | [Nearly](https://nearly.trade/last-2.nearlytrade.near), launched 2026-11-13 by `heavycat9990.near`. We chose Nearly because it is the most popular launchpad on NEAR, which gives $LAST more visibility with traders, and because it can route the token's fees to any account (here the jackpot contract) |
 | Liquidity pool | Rhea DCL `last-2.nearlytrade.near\|wrap.near\|10000` (LP locked by Nearly) |
 | Fees to the jackpot | Creator share of the pool fees + 1% buy tax + 1% sell tax (100% of the creator side, 0% burn, 0% holders), routed to `pot.heavycat9990.near` by Nearly (`fee_to`, locked at launch), delivered every ~5 minutes. Nearly keeps its own platform share. |
 | Jackpot contract | `pot.heavycat9990.near`, source `contracts/last-pot`, Rust (`near-sdk` 5.30.1) |
