@@ -1,6 +1,6 @@
 # $LAST on NEAR mainnet — architecture, trust model and runbook
 
-**Status (2026-11-13):** live. Token `last-2.nearlytrade.near` launched on Nearly with its fees routed to the jackpot contract `pot.heavycat9990.near`; the reporter bot records crown buys and settles rounds; the website https://last-jackpot.vercel.app reads the contract. Every signature or deploy needs explicit human approval.
+**Status (2026-11-14):** live. Token `last-2.nearlytrade.near` launched on Nearly with its fees routed to the jackpot contract `pot.heavycat9990.near`; the reporter bot runs on GitHub Actions ([armand418/last-reporter](https://github.com/armand418/last-reporter)), records crown buys and settles rounds; round 1 was settled and paid automatically; the website https://last-jackpot.vercel.app reads the contract. Every signature or deploy needs explicit human approval.
 
 ## Deployment record
 
@@ -16,6 +16,8 @@
 | Owner / reporter | `heavycat9990.near` |
 | Storage | 153,321 bytes = 1.5332 NEAR locked |
 | First crown buy | `wrapz-z.near`, 10 NEAR, buy tx `5H7PAmLCiejUemSs7694JBE7FBGgdenNhsVSrQWUWzcx`, recorded by tx `6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq` |
+| Round 1 payout | `settle_round` tx `7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk`: 0.176316811750498314636662 NEAR paid to `wrapz-z.near`, round status `PAID` |
+| Reporter key (GitHub Actions) | function-call access key `ed25519:JXDdJfQXC1m93F3p8m5tTF7exTekuLDTxgVK9uvEraJ` on `heavycat9990.near`, receiver `pot.heavycat9990.near`, methods `record_buy` and `settle_round`, gas allowance 1 NEAR (added by tx `D3yy5FHeJRn1nzvxMqUZcnats48k2dhQynPzXQauCaYD`) |
 
 ## Architecture
 
@@ -52,7 +54,8 @@ The pot can only leave the contract as a prize. Deleting the pot account's full-
 
 - Lists the token's transactions with the FastNEAR transactions API (`POST tx.main.fastnear.com/v0/account`), one request every 10 s, pages back if needed, and fetches their receipts in batches (`/v0/transactions`).
 - Buy = a receipt on the token logging a NEP-141 `ft_transfer` to the transaction signer. NEAR spent = `wrap.near` "Transfer N from <signer>" logs in the same transaction (Rhea DCL, Rhea v2, aggregators, NEAR wrapped on the fly). Buys paid with another token are not eligible.
-- Processes transactions in chain order and saves a cursor (`~/.last-reporter.json`), so it resumes after a restart. A buy after the current deadline waits for the settlement, then starts the next round.
+- Processes transactions in chain order and saves a cursor after each one (`--state`, default `~/.last-reporter.json`), so it resumes after a restart. A buy made after the current deadline stops the scan without moving the cursor; the bot settles the expired round, then replays that buy, which starts the next round. Nothing is kept only in memory.
+- Settles a round only after recording every earlier buy, so a buy made in time but reported late is never lost.
 - Contract views go through public RPCs with fallback (`near.drpc.org`, `rpc.ankr.com/near`, FastNEAR archival, FastNEAR free); calls are signed with near-cli and the legacy keychain. Logs an "alive" line every 5 minutes.
 
 Run (WSL/Linux):
@@ -61,7 +64,15 @@ Run (WSL/Linux):
 python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytrade.near --reporter heavycat9990.near
 ```
 
-`--from-height H` starts from block H on the first run; `--dry-run` signs nothing.
+`--from-height H` starts from block H on the first run; `--dry-run` signs nothing; `--max-runtime N` exits cleanly after N seconds.
+
+### Hosting (GitHub Actions)
+
+The live bot runs in [armand418/last-reporter](https://github.com/armand418/last-reporter) (same `reporter.py`):
+
+- `.github/workflows/reporter.yml` starts every 6 hours (`cron: 0 */6 * * *`) and on demand; each run lasts ~5 h 45 min (`--max-runtime 20700`), then commits `state/cursor.json`. A concurrency group keeps a single bot running; queued runs start when the previous one ends.
+- The key comes from the repository secrets `REPORTER_PRIVATE_KEY` / `REPORTER_PUBLIC_KEY`, is written to the legacy keychain for the run and deleted at the end. Dry runs never commit the cursor.
+- To stop: Actions → *$LAST reporter* → *Disable workflow*, then cancel the running run. Best done while the round is `IDLE`; otherwise anyone can still call `settle_round` after the deadline. After the event, delete the function-call key from `heavycat9990.near`.
 
 ## Parameters
 

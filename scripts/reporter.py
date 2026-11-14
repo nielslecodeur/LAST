@@ -87,7 +87,7 @@ def view(contract: str, method: str, args: dict | None = None):
 def call(contract: str, method: str, args: dict, signer: str, dry: bool) -> bool:
     cmd = [
         "near", "contract", "call-function", "as-transaction", contract, method,
-        "json-args", json.dumps(args), "prepaid-gas", "60.0 Tgas", "attached-deposit", "0 NEAR",
+        "json-args", json.dumps(args), "prepaid-gas", "30.0 Tgas", "attached-deposit", "0 NEAR",
         "sign-as", signer, "network-config", "mainnet", "sign-with-legacy-keychain", "send",
     ]
     if dry:
@@ -195,7 +195,9 @@ def main():
     ap.add_argument("--state", default=os.path.expanduser("~/.last-reporter.json"))
     ap.add_argument("--from-height", type=int, default=None, help="first block to scan on the first run")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--max-runtime", type=int, default=0, help="exit cleanly after N seconds (0 = run forever)")
     a = ap.parse_args()
+    stop_at = time.time() + a.max_runtime if a.max_runtime else None
 
     cfg = view(a.pot, "get_config")
     if cfg["reporter_id"] != a.reporter and not a.dry_run:
@@ -212,10 +214,8 @@ def main():
         cursor = (rpc("block", {"finality": "final"})["header"]["height"], 1 << 30)
     log("starting after block", cursor[0])
 
-    pending: list[tuple[str, str, int, int]] = []  # buys after the deadline, waiting for settlement
     st: dict = {}
     st_at = 0.0
-
     beat_at = 0.0
 
     def refresh():
@@ -232,17 +232,17 @@ def main():
         call(a.pot, "record_buy", {"buyer": buyer, "near_in": str(near_in), "tx_hash": tx, "buy_timestamp_ns": str(ts)}, a.reporter, a.dry_run)
         refresh()
 
+    # Each loop: (1) record every new token buy in chain order; a buy made after the current
+    # deadline stops the scan WITHOUT moving the cursor, so it is replayed once the round is
+    # settled (safe across restarts: nothing is kept only in memory). (2) Settle an expired round
+    # only after that scan, so a late-reported in-time buy is never lost.
     while True:
+        if stop_at and time.time() >= stop_at:
+            log("max runtime reached, exiting cleanly at cursor", list(cursor))
+            return
         try:
             if time.time() - st_at >= STATE_REFRESH_S:
                 refresh()
-            now = int(st["now_ns"]) + int((time.time() - st_at) * 1e9)
-            if st["status"] == "EXPIRED" and now >= int(st["settle_after_ns"]):
-                call(a.pot, "settle_round", {}, a.reporter, a.dry_run)
-                refresh()
-                continue
-            while pending and st["status"] == "IDLE":
-                record(*pending.pop(0))
 
             txs = new_txs(a.token, cursor)
             if txs:
@@ -251,21 +251,27 @@ def main():
                     h = t["transaction_hash"]
                     d = details.get(h)
                     if d is None:
-                        raise RuntimeError(f"no details yet for {h}")  # retry the batch later
+                        raise RuntimeError(f"no details yet for {h}")  # retry later from the same cursor
                     buy = analyse(d, a.token)
                     if buy:
                         buyer, near_in, ts = buy
                         if near_in < min_buy:
                             log("buy below minimum or not paid in NEAR", buyer, near_in / 1e24, h)
                         else:
-                            log("eligible buy", buyer, near_in / 1e24, "NEAR", h)
                             deadline = int(st["deadline_ns"]) if st.get("deadline_ns") else None
-                            if pending or (st["status"] != "IDLE" and deadline is not None and ts >= deadline):
-                                pending.append((h, buyer, ts, near_in))
-                            else:
-                                record(h, buyer, ts, near_in)
+                            if st["status"] != "IDLE" and deadline is not None and ts >= deadline:
+                                log("buy after the deadline, waiting for settlement:", buyer, h)
+                                break  # cursor stays before this tx
+                            log("eligible buy", buyer, near_in / 1e24, "NEAR", h)
+                            record(h, buyer, ts, near_in)
                     cursor = (int(t["tx_block_height"]), int(t["tx_index"]))
                     save_state(a.state, {"cursor": list(cursor)})
+
+            now = int(st["now_ns"]) + int((time.time() - st_at) * 1e9)
+            if st.get("settle_after_ns") and now >= int(st["settle_after_ns"]):
+                call(a.pot, "settle_round", {}, a.reporter, a.dry_run)
+                refresh()
+                continue
             time.sleep(POLL_S)
         except KeyboardInterrupt:
             raise

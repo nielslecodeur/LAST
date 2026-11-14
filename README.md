@@ -50,6 +50,7 @@ The token and its pool are Nearly's contracts: they send fees to the jackpot acc
 - **What the reporter can do:** choose which buys are recorded. Every record carries the transaction hash, so anyone can check it on an explorer.
 - **What it cannot do:** move funds, change the rules, or create a winner without a matching buy record. Reports must be chronological and in the past; a buy after the deadline cannot extend a round; a stale buy cannot start a new one.
 - **Data sources:** FastNEAR transactions API (`tx.main.fastnear.com`) to list the token's transactions; public RPCs for contract views; near-cli to sign.
+- **Where it runs:** on GitHub Actions, in [armand418/last-reporter](https://github.com/armand418/last-reporter): runs of ~5 h 45 min started every 6 hours, each resuming from a cursor committed to that repo. It signs with a **function-call access key** of `heavycat9990.near` limited to `record_buy` and `settle_round` on `pot.heavycat9990.near` (it cannot transfer NEAR).
 
 ## Verify it on-chain
 
@@ -70,6 +71,7 @@ near contract call-function as-read-only pot.heavycat9990.near get_round json-ar
 | Token launch tx | [`DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp`](https://nearblocks.io/txns/DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp) (`fee_to` = `pot.heavycat9990.near`) |
 | Token id recorded | [`9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU`](https://nearblocks.io/txns/9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU) |
 | First crown buy recorded | [`6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq`](https://nearblocks.io/txns/6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq) (10 NEAR buy by `wrapz-z.near`, tx `5H7PAmLC…`) |
+| Round 1 settled and paid | [`7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk`](https://nearblocks.io/txns/7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk): `wrapz-z.near` won 0.1763 NEAR, sent automatically (`get_round` 1 → `PAID`) |
 
 More detail: [`docs/MAINNET_POT.md`](docs/MAINNET_POT.md).
 
@@ -79,7 +81,7 @@ More detail: [`docs/MAINNET_POT.md`](docs/MAINNET_POT.md).
 contracts/last-pot/     Jackpot contract (Rust, near-sdk 5.30.1): rounds, record_buy, settle_round + payout, views
   src/lib.rs            contract
   src/tests.rs          23 unit tests
-scripts/reporter.py     Reporter bot (Python 3, stdlib only + near-cli for signing)
+scripts/reporter.py     Reporter bot (Python 3, stdlib only + near-cli for signing); deployed copy: armand418/last-reporter
 apps/web/               Jackpot website (React 19 + Vite + Tailwind 4), reads the contract over public RPC
   src/pot/              page, contract reader, polling hook
 brand/                  Token logo (PNG) and generator
@@ -103,7 +105,7 @@ pnpm --dir apps/web test
 pnpm --dir apps/web dev
 ```
 
-Reporter (needs the reporter account key in the near-cli legacy keychain; `--dry-run` signs nothing):
+Reporter (needs the reporter account key in the near-cli legacy keychain; `--dry-run` signs nothing, `--max-runtime N` exits cleanly after N seconds):
 
 ```bash
 python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytrade.near --reporter heavycat9990.near --dry-run
@@ -111,7 +113,7 @@ python3 scripts/reporter.py --pot pot.heavycat9990.near --token last-2.nearlytra
 
 ## Limitations and risks
 
-- **The reporter is a trusted, single operator.** It records buys and triggers settlement. If it stops, rounds are not updated until it restarts (it resumes from its saved cursor); a buy reported more than 60 minutes late no longer counts. `settle_round` itself is permissionless: anyone can call it after the deadline.
+- **The reporter is a trusted, single operator.** It records buys and triggers settlement. If it stops, rounds are not updated until it restarts (it resumes from its saved cursor); a buy reported after its round was settled no longer counts. GitHub may start a scheduled run a few minutes late. `settle_round` itself is permissionless: anyone can call it after the deadline.
 - **Fees arrive in batches (~5 min),** so fees from the last minutes of a round can land in the next round's pot.
 - **Only buys paid in NEAR/wNEAR count** toward the crown.
 - **Bots and multiple wallets can play.** There is no fairness or anti-sniping guarantee; transaction ordering and last-second buys are part of the game.
