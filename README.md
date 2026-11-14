@@ -9,13 +9,24 @@ Every buy of at least **0.5 NEAR** takes the crown and resets a **60-minute** co
 - **Token:** [`last-2.nearlytrade.near`](https://nearblocks.io/token/last-2.nearlytrade.near)
 - **Hackathon track:** NEAR Hackathon 2026, *Memecoins With Mechanics*
 
+## Live on NEAR mainnet, not a testnet demo
+
+$LAST is not a prototype on testnet. The token, the pool, the jackpot contract, the bot and the website all run on **NEAR mainnet** with **real traders and real NEAR**:
+
+- the token trades publicly on Nearly and Rhea, and real trading fees flow into the jackpot contract every ~5 minutes;
+- real buys have taken the crown: the first one was 10 NEAR by `wrapz-z.near`;
+- a full round has already been played and **paid out on-chain**: round 1 ended and the contract sent 0.1763 NEAR to the winner by itself ([settle tx](https://nearblocks.io/txns/7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk));
+- the jackpot is running right now: check it on https://last-jackpot.vercel.app or with `get_state` (see [Verify it on-chain](#verify-it-on-chain)).
+
+A memecoin only means something with a real market: real buyers, real fees, real winners. Memecoin culture lives on mainnet, so that is where we built and launched $LAST. Every claim in this README can be checked on-chain.
+
 ## Key facts
 
 | Item | Value |
 |---|---|
 | Network | **NEAR mainnet** |
 | Token | `$LAST` (name "Last"), NEP-141, contract `last-2.nearlytrade.near`, 18 decimals, fixed supply 1,000,000,000 |
-| Launchpad | [Nearly](https://nearly.trade/last-2.nearlytrade.near), launched 2026-11-13 by `heavycat9990.near` |
+| Launchpad | [Nearly](https://nearly.trade/last-2.nearlytrade.near), launched 2026-11-13 by `heavycat9990.near`. We chose Nearly because it is the most popular launchpad on NEAR, which gives $LAST more visibility with traders, and because it can route the token's fees to any account (here the jackpot contract) |
 | Liquidity pool | Rhea DCL `last-2.nearlytrade.near\|wrap.near\|10000` (LP locked by Nearly) |
 | Fees to the jackpot | Creator share of the pool fees + 1% buy tax + 1% sell tax (100% of the creator side, 0% burn, 0% holders), routed to `pot.heavycat9990.near` by Nearly (`fee_to`, locked at launch), delivered every ~5 minutes. Nearly keeps its own platform share. |
 | Jackpot contract | `pot.heavycat9990.near`, source `contracts/last-pot`, Rust (`near-sdk` 5.30.1) |
