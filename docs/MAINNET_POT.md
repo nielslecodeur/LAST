@@ -1,6 +1,8 @@
 # $LAST on NEAR mainnet — architecture, trust model and runbook
 
-**Status (2026-11-14):** live. Token `last-2.nearlytrade.near` launched on Nearly with its fees routed to the jackpot contract `pot.heavycat9990.near`; the reporter bot runs on GitHub Actions ([armand418/last-reporter](https://github.com/armand418/last-reporter)), records crown buys and settles rounds; round 1 was settled and paid automatically; the website https://last-jackpot.vercel.app reads the contract. Every signature or deploy needs explicit human approval.
+**Status (2026-11-25): ended.** Shut down because running it cost too much (≈1.53 NEAR locked for storage plus the bot's upkeep, with no trading left) and the hackathon results took longer than expected. The GitHub Actions schedule was removed, the reporter function-call key was deleted (tx `2B9WnUs74hGmJE1G9j3ADcg5of462ewV5mWRsJHwGC4K`), and `pot.heavycat9990.near` was deleted with beneficiary `heavycat9990.near` (tx `CjMZN9nUzH8TJAFbokbAjzdFAzepNG3GxFjSrDqaqmzj`), while IDLE with no prize owed. Nearly's `fee_to` still points to the deleted account. The rest of this document describes the system as it ran.
+
+**Previous status (2026-11-14):** live. Token `last-2.nearlytrade.near` launched on Nearly with its fees routed to the jackpot contract `pot.heavycat9990.near`; the reporter bot runs on GitHub Actions ([armand418/last-reporter](https://github.com/armand418/last-reporter)), records crown buys and settles rounds; round 1 was settled and paid automatically; the website https://last-jackpot.vercel.app reads the contract. Every signature or deploy needs explicit human approval.
 
 ## Deployment record
 
