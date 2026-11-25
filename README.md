@@ -1,5 +1,11 @@
 # $LAST — the last buyer takes the pot
 
+> **Status: ended on 2026-11-25.** $LAST ran live on NEAR mainnet from 2026-11-13 to 2026-11-25. We shut it down because **running it cost too much** for what it brought in (about 1.53 NEAR locked for the contract's storage, plus the bot's upkeep, while trading had stopped). We only meant to keep it running until the NEAR Hackathon results, and **we did not expect the winners to take this long to be announced**.
+>
+> What was done: the reporter bot was stopped, its access key was deleted, and the jackpot contract account `pot.heavycat9990.near` was deleted ([tx `CjMZN9nU…`](https://nearblocks.io/txns/CjMZN9nUzH8TJAFbokbAjzdFAzepNG3GxFjSrDqaqmzj)). No round was running and no prize was owed; the account's balance (the storage deposit plus 0.1455 NEAR of fees that had not been won) returned to the team account `heavycat9990.near`. The token still exists on Nearly but no longer has a jackpot: buying it does not win anything. The site now shows this notice and the on-chain record.
+>
+> The rest of this README describes the project as it ran.
+
 **$LAST is a memecoin live on NEAR mainnet with a jackpot game built into its trading.**
 Every buy of at least **0.5 NEAR** takes the crown and resets a **60-minute** countdown. When the countdown reaches zero, **90% of the jackpot is paid automatically** to the last crown holder and 10% seeds the next round. The jackpot is funded by the token's trading: **all of the creator's share of the pool fees and of the 1% buy/sell tax** goes to the jackpot contract.
 
@@ -9,14 +15,14 @@ Every buy of at least **0.5 NEAR** takes the crown and resets a **60-minute** co
 - **Token:** [`last-2.nearlytrade.near`](https://nearblocks.io/token/last-2.nearlytrade.near)
 - **Hackathon track:** NEAR Hackathon 2026, *Memecoins With Mechanics*
 
-## Live on NEAR mainnet, not a testnet demo
+## Built and run on NEAR mainnet, not a testnet demo
 
-$LAST is not a prototype on testnet. The token, the pool, the jackpot contract, the bot and the website all run on **NEAR mainnet** with **real traders and real NEAR**:
+$LAST was not a prototype on testnet. The token, the pool, the jackpot contract, the bot and the website all ran on **NEAR mainnet** with **real traders and real NEAR**:
 
 - the token trades publicly on Nearly and Rhea, and real trading fees flow into the jackpot contract every ~5 minutes;
 - real buys have taken the crown: the first one was 10 NEAR by `wrapz-z.near`;
 - a full round has already been played and **paid out on-chain**: round 1 ended and the contract sent 0.1763 NEAR to the winner by itself ([settle tx](https://nearblocks.io/txns/7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk));
-- the jackpot is running right now: check it on https://last-jackpot.vercel.app or with `get_state` (see [Verify it on-chain](#verify-it-on-chain)).
+- every step above is recorded on-chain (see the deployment record below); the contract account itself was closed on 2026-11-25.
 
 A memecoin only means something with a real market: real buyers, real fees, real winners. Memecoin culture lives on mainnet, so that is where we built and launched $LAST. Every claim in this README can be checked on-chain.
 
@@ -65,6 +71,8 @@ The token and its pool are Nearly's contracts: they send fees to the jackpot acc
 
 ## Verify it on-chain
 
+Since 2026-11-25 the contract account is deleted, so these views no longer answer; the transactions below remain on-chain and can still be checked on an explorer.
+
 Read-only, no wallet needed ([near-cli-rs](https://github.com/near/near-cli-rs)):
 
 ```bash
@@ -82,6 +90,7 @@ near contract call-function as-read-only pot.heavycat9990.near get_round json-ar
 | Token launch tx | [`DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp`](https://nearblocks.io/txns/DXhHMngBAQd4xssXjW3zHacZruM4PniGjPuig3qSsCqp) (`fee_to` = `pot.heavycat9990.near`) |
 | Token id recorded | [`9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU`](https://nearblocks.io/txns/9VDknpyursvPvVSTW2qMas7jRzeEUyV4DZbwYWah3gCU) |
 | First crown buy recorded | [`6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq`](https://nearblocks.io/txns/6AvsPPGyn2SUH2gwmzkECrf2bctEJtZtW2i7GrYhGbcq) (10 NEAR buy by `wrapz-z.near`, tx `5H7PAmLC…`) |
+| Contract account closed (2026-11-25) | [`CjMZN9nUzH8TJAFbokbAjzdFAzepNG3GxFjSrDqaqmzj`](https://nearblocks.io/txns/CjMZN9nUzH8TJAFbokbAjzdFAzepNG3GxFjSrDqaqmzj), balance returned to `heavycat9990.near`; reporter key deleted by tx [`2B9WnUs7…`](https://nearblocks.io/txns/2B9WnUs74hGmJE1G9j3ADcg5of462ewV5mWRsJHwGC4K) |
 | Round 1 settled and paid | [`7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk`](https://nearblocks.io/txns/7PN8F3LGzPgGaP5QyF3xNiH1FQmsvptxGQpydwVRy9xk): `wrapz-z.near` won 0.1763 NEAR, sent automatically (`get_round` 1 → `PAID`) |
 
 More detail: [`docs/MAINNET_POT.md`](docs/MAINNET_POT.md).

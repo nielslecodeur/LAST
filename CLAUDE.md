@@ -1,6 +1,6 @@
 # CLAUDE.md — rules for coding agents on $LAST
 
-Read `README.md` first, then `docs/MAINNET_POT.md`. $LAST runs on **NEAR mainnet**: the token `last-2.nearlytrade.near` (Nearly launchpad), the jackpot contract `pot.heavycat9990.near` (`contracts/last-pot`), the reporter bot (`scripts/reporter.py`) and the website (`apps/web`, deployed at https://last-jackpot.vercel.app).
+**The project ended on 2026-11-25:** the contract account `pot.heavycat9990.near` was deleted and the bot stopped; the site shows an "ended" page (`apps/web/src/pot/EndedApp.tsx`). Read `README.md` first, then `docs/MAINNET_POT.md`. $LAST runs on **NEAR mainnet**: the token `last-2.nearlytrade.near` (Nearly launchpad), the jackpot contract `pot.heavycat9990.near` (`contracts/last-pot`), the reporter bot (`scripts/reporter.py`) and the website (`apps/web`, deployed at https://last-jackpot.vercel.app).
 
 ## Hard rules
 
